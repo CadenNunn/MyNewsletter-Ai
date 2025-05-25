@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}MyNewsletter AI{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <style>
+    .theme-color-1 { color: #2563EB; }
+    .theme-color-2 { color: #1D4ED8; }
+    .theme-color-3 { color: #6B7280; }
+    .bg-theme-1 { background-color: #2563EB; }
+    .bg-theme-2 { background-color: #1D4ED8; }
+
+    .btn-primary {
+      background-color: #2563EB;
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: 9999px;
+      font-weight: 500;
+      transition: background-color 0.2s;
+      display: inline-block;
+      text-align: center;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .btn-primary:hover {
+      background-color: #1D4ED8;
+    }
+
+    .btn-outline {
+      background-color: white;
+      border: 1px solid #2563EB;
+      color: #2563EB;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+
+    .btn-outline:hover {
+      background-color: #EFF6FF;
+    }
+
+    .heading-1  { font-size: 1.875rem; font-weight: 700; color: #2563EB; }
+    .heading-2  { font-size: 1.5rem; font-weight: 600; color: #1D4ED8; }
+    .subheading { font-size: 1rem; font-weight: 500; color: #4B5563; }
+    .body-text  { font-size: 1rem; color: #374151; }
+  </style>
+</head>
+
+<body class="font-sans bg-gray-50 text-gray-800 flex flex-col min-h-screen">
+
+  {% include 'partials/header.html' %}
+
+  <main class="flex-grow">
+    {% block content %}
+    {% endblock %}
+  </main>
+
+  {% include 'partials/footer.html' %}
+
+</body>
+</html>

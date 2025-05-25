@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Login - MyNewsletter AI{% endblock %}
+
+{% block content %}
+
+<!-- Login Form -->
+<section class="py-20 bg-gray-50 min-h-screen flex items-center justify-center px-4">
+  <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
+    <h1 class="heading-1 text-center mb-6">Welcome Back</h1>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="bg-yellow-100 text-yellow-800 p-4 rounded mb-4 text-sm">
+          {% for message in messages %}
+            <p>{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" class="space-y-5">
+      <div>
+        <label class="block text-sm font-medium mb-1">Email</label>
+        <input type="email" name="email" required class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Password</label>
+        <div class="relative">
+          <input
+            id="password"
+            type="password"
+            name="password"
+            required
+            class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+          />
+          <button
+            type="button"
+            onclick="togglePassword()"
+            class="absolute inset-y-0 right-2 flex items-center text-gray-500"
+          >
+            <svg
+              id="eyeIcon"
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5 transition duration-200"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5
+                   c4.477 0 8.268 2.943 9.542 7
+                   -1.274 4.057-5.065 7-9.542 7
+                   -4.477 0-8.268-2.943-9.542-7z"
+              />
+              <line
+                id="eyeSlash"
+                x1="4"
+                y1="4"
+                x2="20"
+                y2="20"
+                stroke="currentColor"
+                stroke-width="2"
+                class="hidden"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary w-full text-center">Log In</button>
+    </form>
+
+    <p class="mt-4 text-center text-sm text-gray-500">
+      Don’t have an account?
+      <a href="/register" class="text-blue-600 hover:underline">Register</a>
+    </p>
+  </div>
+</section>
+
+<script>
+  function togglePassword() {
+    const input = document.getElementById("password");
+    const slash = document.getElementById("eyeSlash");
+
+    const isHidden = input.type === "password";
+    input.type = isHidden ? "text" : "password";
+    slash.classList.toggle("hidden", !isHidden);
+  }
+</script>
+
+{% endblock %}

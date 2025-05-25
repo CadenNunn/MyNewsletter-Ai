@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing - MyNewsletter AI{% endblock %}
+
+{% block content %}
+<section class="py-20 px-4 max-w-6xl mx-auto text-center">
+  <h1 class="heading-1 text-4xl mb-4">Choose Your Plan</h1>
+  <p class="subheading mb-10">Upgrade or downgrade your plan as needed.</p>
+
+  <div class="grid md:grid-cols-3 gap-8 text-left">
+
+    <!-- Free Plan -->
+    <div class="bg-white rounded-xl shadow p-8 flex flex-col items-center {% if current_plan == 'free' %}border-2 border-green-400{% endif %}">
+      <h2 class="heading-2 mb-2">Free</h2>
+      <p class="text-3xl font-bold mb-4">$0<span class="text-lg font-normal">/mo</span></p>
+      <ul class="body-text mb-6 space-y-2 text-center">
+        <li>• 1 total newsletter</li>
+        <li>• 1 active newsletter at a time</li>
+        <li>• Core AI features</li>
+      </ul>
+      {% if current_plan == 'free' %}
+        <p class="text-gray-500 text-sm italic">You're on this plan</p>
+      {% elif current_plan_rank > 0 %}
+        <a href="/create-checkout-session/free" class="btn-outline w-full text-center">Downgrade to Free</a>
+      {% endif %}
+    </div>
+
+    <!-- Plus Plan -->
+    <div class="bg-white rounded-xl shadow p-8 flex flex-col items-center border-2 {% if current_plan == 'plus' %}border-blue-600{% else %}border-blue-400{% endif %}">
+      <h2 class="heading-2 mb-2 text-blue-600">Plus</h2>
+      <p class="text-3xl font-bold mb-4">$5<span class="text-lg font-normal">/mo</span></p>
+      <ul class="body-text mb-6 space-y-2 text-center">
+        <li>• Unlimited total newsletters</li>
+        <li>• 1 active newsletter at a time</li>
+        <li>• Priority support</li>
+      </ul>
+      {% if current_plan == 'plus' %}
+        <p class="text-gray-500 text-sm italic mb-2">This is your current plan</p>
+      {% elif current_plan_rank < 1 %}
+        <a href="/create-checkout-session/plus" class="btn-primary w-full text-center">Upgrade to Plus</a>
+      {% elif current_plan_rank > 1 %}
+        <a href="/create-checkout-session/plus" class="btn-outline w-full text-center">Downgrade to Plus</a>
+      {% endif %}
+    </div>
+
+    <!-- Pro Plan -->
+    <div class="bg-white rounded-xl shadow p-8 flex flex-col items-center border-2 {% if current_plan == 'pro' %}border-yellow-600{% else %}border-yellow-400{% endif %}">
+      <h2 class="heading-2 mb-2 text-yellow-600">Pro</h2>
+      <p class="text-3xl font-bold mb-4">$15<span class="text-lg font-normal">/mo</span></p>
+      <ul class="body-text mb-6 space-y-2 text-center">
+        <li>• Unlimited newsletters</li>
+        <li>• Unlimited active campaigns</li>
+        <li>• Advanced AI + analytics</li>
+      </ul>
+      {% if current_plan == 'pro' %}
+        <p class="text-gray-500 text-sm italic">You're on this plan</p>
+      {% elif current_plan_rank < 2 %}
+        <a href="/create-checkout-session/pro" class="btn-primary w-full text-center">Upgrade to Pro</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

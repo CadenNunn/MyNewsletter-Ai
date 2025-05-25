@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Create Newsletter - MyNewsletter AI{% endblock %}
+
+{% block content %}
+
+<!-- Flash Messages -->
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <div class="bg-yellow-100 text-yellow-800 text-center py-3 px-4">
+      {% for message in messages %}
+        <p>{{ message }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<style>
+  .step-panel {
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+  }
+  .step-hidden {
+    transform: translateX(100%);
+    opacity: 0;
+    position: absolute;
+    pointer-events: none;
+  }
+  .step-active {
+    transform: translateX(0);
+    opacity: 1;
+    position: relative;
+  }
+</style>
+
+<script>
+  let currentStep = 0;
+  const steps = ["step-topic", "step-demo", "step-tone", "step-final"];
+  const stepTitles = ["Topic", "Demographic", "Tone", "Frequency & Email"];
+
+  function showStep(index) {
+    steps.forEach((id, i) => {
+      const el = document.getElementById(id);
+      el.classList.remove("step-active", "step-hidden");
+      el.classList.add(i === index ? "step-active" : "step-hidden");
+
+      document.getElementById(`step-indicator-${i}`).classList.toggle("bg-blue-600", i <= index);
+      document.getElementById(`step-indicator-${i}`).classList.toggle("bg-gray-300", i > index);
+    });
+    document.getElementById("step-label").textContent = `Step ${index + 1} of 4: ${stepTitles[index]}`;
+  }
+
+  function validateStep(index) {
+    const stepId = steps[index];
+    const inputs = document.querySelectorAll(`#${stepId} input, #${stepId} select`);
+    let valid = true;
+
+    for (let input of inputs) {
+      const errorEl = document.getElementById(`${input.id}_error`);
+      if (!input.value.trim()) {
+        input.classList.add("border-red-500");
+        if (errorEl) errorEl.classList.remove("hidden");
+        input.focus();
+        valid = false;
+      } else {
+        input.classList.remove("border-red-500");
+        if (errorEl) errorEl.classList.add("hidden");
+      }
+    }
+    return valid;
+  }
+
+  function nextStep() {
+    if (validateStep(currentStep)) {
+      if (currentStep < steps.length - 1) {
+        currentStep++;
+        showStep(currentStep);
+      }
+    }
+  }
+
+  function prevStep() {
+    if (currentStep > 0) {
+      currentStep--;
+      showStep(currentStep);
+    }
+  }
+
+  window.onload = () => {
+    showStep(0);
+  }
+</script>
+
+<!-- 🧭 Page Layout + Theme -->
+<div class="min-h-screen flex items-center justify-center px-4">
+  <div class="w-full max-w-xl relative">
+
+    <h1 class="heading-1 text-center mb-4">Create Your AI Newsletter</h1>
+    <div class="subheading text-center mb-2" id="step-label">Step 1 of 4: Topic</div>
+
+    <!-- Stepper Bar -->
+    <div class="flex items-center justify-between mb-6">
+      <div id="step-indicator-0" class="flex-1 h-2 mx-1 bg-blue-600 rounded"></div>
+      <div id="step-indicator-1" class="flex-1 h-2 mx-1 bg-gray-300 rounded"></div>
+      <div id="step-indicator-2" class="flex-1 h-2 mx-1 bg-gray-300 rounded"></div>
+      <div id="step-indicator-3" class="flex-1 h-2 mx-1 bg-gray-300 rounded"></div>
+    </div>
+
+    <!-- Form -->
+    <form method="POST" action="/create-newsletter" class="space-y-6 relative min-h-[300px]">
+
+      <!-- Step 1 -->
+      <div id="step-topic" class="step-panel">
+        <label for="topic" class="subheading mb-2 block">What's your newsletter about?</label>
+        <input type="text" id="topic" name="topic" class="w-full border rounded p-2">
+        <p id="topic_error" class="text-red-600 text-sm mt-1 hidden">*Field required</p>
+        <div class="mt-4 flex justify-between">
+          <span></span>
+          <button type="button" onclick="nextStep()" class="btn-primary">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div id="step-demo" class="step-panel">
+        <label for="demographic" class="subheading mb-2 block">Who's the target audience?</label>
+        <input type="text" id="demographic" name="demographic" class="w-full border rounded p-2">
+        <p id="demographic_error" class="text-red-600 text-sm mt-1 hidden">*Field required</p>
+        <div class="mt-4 flex justify-between">
+          <button type="button" onclick="prevStep()" class="theme-color-1">Back</button>
+          <button type="button" onclick="nextStep()" class="btn-primary">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div id="step-tone" class="step-panel">
+        <label for="tone" class="subheading mb-2 block">Select a tone:</label>
+        <select id="tone" name="tone" class="w-full border rounded p-2">
+          <option value="">-- Select Tone --</option>
+          <option value="friendly">Friendly</option>
+          <option value="professional">Professional</option>
+          <option value="inspirational">Inspirational</option>
+          <option value="funny">Funny</option>
+        </select>
+        <p id="tone_error" class="text-red-600 text-sm mt-1 hidden">*Field required</p>
+        <div class="mt-4 flex justify-between">
+          <button type="button" onclick="prevStep()" class="theme-color-1">Back</button>
+          <button type="button" onclick="nextStep()" class="btn-primary">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div id="step-final" class="step-panel">
+        <label for="frequency" class="subheading mb-2 block">How often should we send it?</label>
+        <select id="frequency" name="frequency" class="w-full border rounded p-2 mb-1">
+          <option value="">-- Select Frequency --</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Biweekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <p id="frequency_error" class="text-red-600 text-sm mt-1 hidden">*Field required</p>
+
+        <label for="email" class="subheading mt-4 mb-2 block">Your email:</label>
+        <input type="email" id="email" name="email" class="w-full border rounded p-2">
+        <p id="email_error" class="text-red-600 text-sm mt-1 hidden">*Field required</p>
+
+        <div class="mt-4 flex justify-between">
+          <button type="button" onclick="prevStep()" class="theme-color-1">Back</button>
+          <button type="submit" class="btn-primary">Generate Plan</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

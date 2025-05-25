@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}MyNewsletter AI{% endblock %}
+
+{% block content %}
+
+<!-- Hero Section -->
+<section class="bg-gray-100 py-20 text-center px-4">
+  <h1 class="heading-1 text-5xl mb-4">Build Beautiful Newsletters, Effortlessly</h1>
+  <p class="subheading text-xl mb-8">Create and schedule high-quality email newsletters in minutes — no writing or design skills needed.</p>
+  <a href="/build-newsletter" class="btn-primary text-lg rounded-full">Start Today</a>
+</section>
+
+<!-- Features Section -->
+<section class="py-20 px-6 max-w-5xl mx-auto">
+  <div class="grid md:grid-cols-3 gap-10 text-center">
+    <div>
+      <h2 class="heading-2 mb-2">🎯 Targeted Content</h2>
+      <p class="body-text">Create newsletters tailored to your audience with demographic-aware AI prompts.</p>
+    </div>
+    <div>
+      <h2 class="heading-2 mb-2">⚡ Fast & Automated</h2>
+      <p class="body-text">Generate, schedule, and send—all in one flow. No design or copywriting needed.</p>
+    </div>
+    <div>
+      <h2 class="heading-2 mb-2">📬 Scheduled Delivery</h2>
+      <p class="body-text">We handle the sending for you. Choose frequency, sit back, and relax.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Testimonials Section -->
+<section class="bg-blue-50 py-20 px-6">
+  <div class="max-w-4xl mx-auto text-center">
+    <h2 class="heading-1 mb-10">What People Are Saying</h2>
+    <div class="grid md:grid-cols-2 gap-8 text-left">
+      <div class="bg-white p-6 rounded-xl shadow">
+        <p class="body-text mb-4">"I created a professional-looking newsletter in under 10 minutes. This platform is a game-changer."</p>
+        <p class="font-semibold">— Emily R., Small Business Owner</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow">
+        <p class="body-text mb-4">"The AI-generated content was shockingly good. I’ve already scheduled my next month of newsletters."</p>
+        <p class="font-semibold">— Mark D., Marketing Consultant</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

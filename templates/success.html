@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Newsletter Scheduled - MyNewsletter AI{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4">
+  <div class="bg-white rounded-xl shadow-lg max-w-md w-full p-8 text-center">
+    <div class="text-4xl mb-4 theme-color-1">🎉</div>
+    <h1 class="heading-2 mb-2">Your Newsletter is Scheduled!</h1>
+    <p class="body-text mb-4">We’ve saved your content and scheduled it for delivery.</p>
+
+    <div class="bg-gray-100 text-gray-700 text-sm py-3 px-4 rounded mb-6">
+      <span class="font-medium">First send:</span> {{ next_send }}
+    </div>
+
+    <div class="space-y-3">
+      <a href="/dashboard" class="btn-primary w-full block text-center">Back to Home</a>
+      <a href="/build-newsletter" class="btn-outline w-full block text-center">Create Another</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

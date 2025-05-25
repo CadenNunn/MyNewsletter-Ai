@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - MyNewsletter AI{% endblock %}
+
+{% block content %}
+
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+<section class="py-16 px-4 max-w-6xl mx-auto">
+  <h1 class="heading-1 mb-10 text-center">Your Newsletter Plans</h1>
+
+
+  <!-- 🧊 Centered Modern Toast Message -->
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div 
+        x-data="{ show: true }"
+        x-init="setTimeout(() => show = false, 4000)"
+        x-show="show"
+        x-transition
+        class="fixed inset-0 flex items-start justify-center mt-20 z-50 pointer-events-none"
+      >
+        <div class="bg-white border border-gray-300 shadow-xl rounded-xl px-6 py-4 text-gray-800 w-full max-w-sm mx-auto text-center pointer-events-auto">
+          <p class="text-base font-semibold">{{ messages[0] }}</p>
+        </div>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+
+
+  {% with messages = get_flashed_messages(category_filter=['rescheduled']) %}
+    {% if messages %}
+      <div class="mb-6 max-w-3xl mx-auto bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 text-center shadow">
+        {% for message in messages %}
+          <p class="font-medium">{{ message }}</p>
+        {% endfor %}
+        <p class="text-sm mt-1 text-green-700">Future emails will follow the same day/time, spaced by your chosen frequency.</p>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% with messages = get_flashed_messages(category_filter=['deleted']) %}
+    {% if messages %}
+      <div class="mb-6 max-w-3xl mx-auto bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 text-center shadow">
+        {% for message in messages %}
+          <p class="font-medium">{{ message }}</p>
+        {% endfor %}
+        <p class="text-sm mt-1 text-red-700">This action cannot be undone.</p>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+
+<!-- 💡 Usage Overview -->
+<div class="flex justify-center gap-4 mb-6">
+
+  <!-- Active Newsletter Counter -->
+  <div class="bg-white border border-blue-200 rounded-xl shadow px-6 py-4 text-center w-44">
+    <p class="text-sm text-gray-600">Active Newsletters</p>
+    <p class="text-lg font-bold text-blue-700">
+      {{ newsletters_active|length }} /
+      {% if active_limit is none %}
+        Unlimited
+      {% else %}
+        {{ active_limit }}
+      {% endif %}
+    </p>
+    <div class="relative w-full bg-blue-100 rounded-full h-2 mt-2">
+      <div class="absolute bg-blue-500 h-2 rounded-full transition-all duration-300"
+           style="width: {{ 100 * newsletters_active|length / active_limit if active_limit else 100 }}%">
+      </div>
+    </div>
+  </div>
+
+  <!-- Total Created Counter -->
+  <div class="bg-white border border-gray-300 rounded-xl shadow px-6 py-4 text-center w-44">
+    <p class="text-sm text-gray-600">Newsletters Created</p>
+    <p class="text-lg font-bold text-gray-800">
+      {{ total_newsletters|length }} /
+      {% if total_limit is none %}
+        Unlimited
+      {% else %}
+        {{ total_limit }}
+      {% endif %}
+    </p>
+    <div class="relative w-full bg-gray-200 rounded-full h-2 mt-2">
+      <div class="absolute bg-gray-700 h-2 rounded-full transition-all duration-300"
+           style="width: {{ 100 * total_newsletters|length / total_limit if total_limit else 100 }}%">
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+  <!-- 🔵 Active Newsletters -->
+  <h2 class="text-2xl font-bold mb-4 text-blue-700">Active Newsletters</h2>
+  {% if newsletters_active %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+      {% for n in newsletters_active %}
+        <div class="bg-white rounded-2xl shadow p-6 space-y-5 border border-gray-200" x-data="{ showForm: false, showDelete: false }">
+          <h2 class="text-xl font-bold text-blue-700">{{ n['plan_title'] }}</h2>
+          <p class="italic text-gray-600 text-sm">“{{ n['summary'] }}”</p>
+          <div class="text-sm text-gray-600 space-y-1">
+            <p><strong>Topic:</strong> {{ n['topic'] }}</p>
+            <p><strong>Tone:</strong> {{ n['tone'] }}</p>
+            <p><strong>Frequency:</strong> {{ n['frequency'] }}</p>
+            <p><strong>Next Send:</strong> {{ n['next_send_time'] }}</p>
+          </div>
+          <button class="btn-outline text-sm w-full" @click="showForm = !showForm">Reschedule Newsletter</button>
+          <form x-show="showForm" x-transition action="/update-send-time" method="POST" class="mt-4 space-y-2">
+            <input type="hidden" name="plan_id" value="{{ n['id'] }}">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Pick a new start time</label>
+            <input type="datetime-local" name="new_send_time" value="{{ n['next_send_time']|replace(' ', 'T') }}" min="{{ min_datetime }}" class="w-full bg-gray-100 border border-gray-300 rounded p-2 text-sm" required autocomplete="off">
+            <button type="submit" class="btn-primary text-sm w-full mt-2">Confirm New Time</button>
+          </form>
+          <form action="/toggle-newsletter-status" method="POST" class="mt-2">
+            <input type="hidden" name="newsletter_id" value="{{ n['id'] }}">
+            <button type="submit" class="btn-outline text-sm w-full border-yellow-500 text-yellow-700 hover:bg-yellow-50">Pause Newsletter</button>
+          </form>
+          <div class="mt-3">
+            <button @click="showDelete = !showDelete" class="btn-outline text-sm w-full border-red-500 text-red-600 hover:bg-red-50">Delete Plan</button>
+            <div x-show="showDelete" x-transition class="mt-3 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
+              <p class="mb-2 font-medium">Are you sure? This action cannot be undone.</p>
+              <form action="/delete-newsletter" method="POST" class="space-y-2">
+                <input type="hidden" name="plan_id" value="{{ n['id'] }}">
+                <div class="flex gap-2">
+                  <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm">Confirm Delete</button>
+                  <button type="button" @click="showDelete = false" class="btn-outline text-sm">Cancel</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-center text-gray-500 mb-10">You don’t have any active newsletters.</p>
+  {% endif %}
+
+  <!-- 🟡 Paused Newsletters -->
+  <h2 class="text-2xl font-bold mt-12 mb-4 text-yellow-700">Paused Newsletters</h2>
+  {% if newsletters_paused %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+      {% for n in newsletters_paused %}
+        <div class="bg-white rounded-2xl shadow p-6 space-y-5 border border-gray-200" x-data="{ showForm: false, showDelete: false }">
+          <h2 class="text-xl font-bold text-blue-700">{{ n['plan_title'] }}</h2>
+          <p class="italic text-gray-600 text-sm">“{{ n['summary'] }}”</p>
+          <div class="text-sm text-gray-600 space-y-1">
+            <p><strong>Topic:</strong> {{ n['topic'] }}</p>
+            <p><strong>Tone:</strong> {{ n['tone'] }}</p>
+            <p><strong>Frequency:</strong> {{ n['frequency'] }}</p>
+            <p><strong>Next Send:</strong> {{ n['next_send_time'] }}</p>
+          </div>
+          <form action="/toggle-newsletter-status" method="POST" class="mt-2">
+            <input type="hidden" name="newsletter_id" value="{{ n['id'] }}">
+            <button type="submit" class="btn-outline text-sm w-full border-green-600 text-green-700 hover:bg-green-50">Activate Newsletter</button>
+          </form>
+          <div class="mt-3">
+            <button @click="showDelete = !showDelete" class="btn-outline text-sm w-full border-red-500 text-red-600 hover:bg-red-50">Delete Plan</button>
+            <div x-show="showDelete" x-transition class="mt-3 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
+              <p class="mb-2 font-medium">Are you sure? This action cannot be undone.</p>
+              <form action="/delete-newsletter" method="POST" class="space-y-2">
+                <input type="hidden" name="plan_id" value="{{ n['id'] }}">
+                <div class="flex gap-2">
+                  <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm">Confirm Delete</button>
+                  <button type="button" @click="showDelete = false" class="btn-outline text-sm">Cancel</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-center text-gray-500 mb-10">You don’t have any paused newsletters.</p>
+  {% endif %}
+
+  <div class="flex justify-center">
+    <a href="/build-newsletter" class="bg-blue-600 text-white px-6 py-2 rounded-xl shadow hover:bg-blue-700 transition">
+      + Create New Newsletter
+    </a>
+  </div>
+</section>
+
+{% endblock %}
