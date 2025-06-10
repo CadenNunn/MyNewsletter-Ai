@@ -35,13 +35,14 @@ Use this structure:
 <h1>{title}</h1>
 <p>Open with a strong hook. Be bold, specific, and valuable. No generic intros.</p>
 
-<h2>{section_title}</h2>
+<h2>{section_title}</h2>Make this title unique and different from the h1 title(Do not include Email x) in this title.
 <p>Make this email focused, smart, and original. Start with a bold insight, stat, or surprising fact.</p>
 <p>Then explain what it means and why it matters for a {demographic}. Include an example, a trend, or a fresh takeaway.</p>
 <p>End with a short call-to-action, tip, or something forwardable.</p>
 
 Requirements:
 - Only use <h1>, <h2>, and <p> tags.
+- Make each header title DIFFERENT, do not reuse titles
 - No inline styles, fluff, summaries, or vague platitudes.
 - Write like a subject matter expert, in a way that’s engaging and skimmable.
 

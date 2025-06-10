@@ -7,57 +7,108 @@
   <h1 class="heading-1 text-4xl mb-4">Choose Your Plan</h1>
   <p class="subheading mb-10">Upgrade or downgrade your plan as needed.</p>
 
-  <div class="grid md:grid-cols-3 gap-8 text-left">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
 
     <!-- Free Plan -->
-    <div class="bg-white rounded-xl shadow p-8 flex flex-col items-center {% if current_plan == 'free' %}border-2 border-green-400{% endif %}">
-      <h2 class="heading-2 mb-2">Free</h2>
-      <p class="text-3xl font-bold mb-4">$0<span class="text-lg font-normal">/mo</span></p>
-      <ul class="body-text mb-6 space-y-2 text-center">
+    <div class="bg-white rounded-xl shadow hover:shadow-xl transition-shadow duration-300 p-8 flex flex-col items-center border-2 {% if current_plan == 'free' %}border-green-400{% else %}border-gray-200{% endif %}">
+      <h2 class="heading-2 mb-2 text-green-600">Free</h2>
+      <p class="text-sm text-gray-500 mb-2">For beginners or testing</p>
+      <p class="text-3xl font-bold mb-2">$0<span class="text-lg font-normal">/mo</span></p>
+
+      {% if current_plan == 'free' %}
+        <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full mb-2">Your Plan</span>
+        <button class="btn-outline w-full opacity-50 cursor-not-allowed" disabled>You're on this plan</button>
+      {% else %}
+        <a href="/stripe-portal" class="btn-outline w-full text-center">Downgrade Plan</a>
+      {% endif %}
+
+      <ul class="body-text mt-6 space-y-2 text-center">
         <li>• 1 total newsletter</li>
         <li>• 1 active newsletter at a time</li>
         <li>• Core AI features</li>
       </ul>
-      {% if current_plan == 'free' %}
-        <p class="text-gray-500 text-sm italic">You're on this plan</p>
-      {% elif current_plan_rank > 0 %}
-        <a href="/create-checkout-session/free" class="btn-outline w-full text-center">Downgrade to Free</a>
-      {% endif %}
     </div>
 
     <!-- Plus Plan -->
-    <div class="bg-white rounded-xl shadow p-8 flex flex-col items-center border-2 {% if current_plan == 'plus' %}border-blue-600{% else %}border-blue-400{% endif %}">
+    <div class="bg-white rounded-xl shadow hover:shadow-xl transition-shadow duration-300 p-8 flex flex-col items-center border-2 {% if current_plan == 'plus' %}border-blue-500{% else %}border-gray-200{% endif %} relative">
+      <span class="absolute top-0 left-0 bg-blue-600 text-white text-xs px-3 py-1 rounded-br-xl">Most Popular</span>
       <h2 class="heading-2 mb-2 text-blue-600">Plus</h2>
-      <p class="text-3xl font-bold mb-4">$5<span class="text-lg font-normal">/mo</span></p>
-      <ul class="body-text mb-6 space-y-2 text-center">
+      <p class="text-sm text-gray-500 mb-2">For solo creators</p>
+      <p class="text-3xl font-bold mb-2">$5<span class="text-lg font-normal">/mo</span></p>
+
+      {% if current_plan == 'plus' %}
+        <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full mb-2">Your Plan</span>
+        <a href="/stripe-portal" class="btn-outline w-full text-center">Manage Subscription</a>
+      {% elif current_plan == 'free' %}
+        <button onclick="openModal('upgrade_plus')" class="btn-primary w-full text-center">Upgrade to Plus</button>
+      {% else %}
+        <a href="/stripe-portal" class="btn-outline w-full text-center">Downgrade Plan</a>
+      {% endif %}
+
+      <ul class="body-text mt-6 space-y-2 text-center">
         <li>• Unlimited total newsletters</li>
         <li>• 1 active newsletter at a time</li>
         <li>• Priority support</li>
       </ul>
-      {% if current_plan == 'plus' %}
-        <p class="text-gray-500 text-sm italic mb-2">This is your current plan</p>
-      {% elif current_plan_rank < 1 %}
-        <a href="/create-checkout-session/plus" class="btn-primary w-full text-center">Upgrade to Plus</a>
-      {% elif current_plan_rank > 1 %}
-        <a href="/create-checkout-session/plus" class="btn-outline w-full text-center">Downgrade to Plus</a>
-      {% endif %}
     </div>
 
     <!-- Pro Plan -->
-    <div class="bg-white rounded-xl shadow p-8 flex flex-col items-center border-2 {% if current_plan == 'pro' %}border-yellow-600{% else %}border-yellow-400{% endif %}">
+    <div class="bg-white rounded-xl shadow hover:shadow-xl transition-shadow duration-300 p-8 flex flex-col items-center border-2 {% if current_plan == 'pro' %}border-yellow-500{% else %}border-gray-200{% endif %}">
       <h2 class="heading-2 mb-2 text-yellow-600">Pro</h2>
-      <p class="text-3xl font-bold mb-4">$15<span class="text-lg font-normal">/mo</span></p>
-      <ul class="body-text mb-6 space-y-2 text-center">
+      <p class="text-sm text-gray-500 mb-2">For power users</p>
+      <p class="text-3xl font-bold mb-2">$15<span class="text-lg font-normal">/mo</span></p>
+
+      {% if current_plan == 'pro' %}
+        <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full mb-2">Your Plan</span>
+        <a href="/stripe-portal" class="btn-outline w-full text-center">Manage Subscription</a>
+      {% elif current_plan == 'free' %}
+        <button onclick="openModal('upgrade_pro')" class="btn-primary w-full text-center">Upgrade to Pro</button>
+      {% else %}
+        <a href="/stripe-portal" class="btn-outline w-full text-center">Downgrade Plan</a>
+      {% endif %}
+
+      <ul class="body-text mt-6 space-y-2 text-center">
         <li>• Unlimited newsletters</li>
         <li>• Unlimited active campaigns</li>
         <li>• Advanced AI + analytics</li>
       </ul>
-      {% if current_plan == 'pro' %}
-        <p class="text-gray-500 text-sm italic">You're on this plan</p>
-      {% elif current_plan_rank < 2 %}
-        <a href="/create-checkout-session/pro" class="btn-primary w-full text-center">Upgrade to Pro</a>
-      {% endif %}
     </div>
   </div>
 </section>
+
+
+
+<!-- 🔔 Confirmation Modal -->
+<div id="confirmModal" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden">
+  <div class="bg-white p-8 rounded-xl shadow-xl max-w-md text-center space-y-4">
+    <h2 class="text-xl font-semibold">Confirm Plan Change</h2>
+    <p id="modalText" class="text-gray-600 text-sm"></p>
+    <div class="flex justify-center gap-4 mt-6">
+      <button onclick="closeModal()" class="btn-outline">Cancel</button>
+      <a id="confirmButton" href="#" class="btn-primary">Confirm</a>
+    </div>
+  </div>
+</div>
+
+<script>
+function openModal(plan) {
+  const modal = document.getElementById('confirmModal');
+  const confirmBtn = document.getElementById('confirmButton');
+  const modalText = document.getElementById('modalText');
+
+  if (plan === 'upgrade_plus') {
+    confirmBtn.href = '/create-checkout-session/plus';
+    modalText.textContent = "Upgrade to the Plus plan for $5/mo. You’ll be billed immediately.";
+  } else if (plan === 'upgrade_pro') {
+    confirmBtn.href = '/create-checkout-session/pro';
+    modalText.textContent = "Upgrade to the Pro plan for $15/mo. You’ll be billed immediately.";
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('confirmModal').classList.add('hidden');
+}
+</script>
 {% endblock %}

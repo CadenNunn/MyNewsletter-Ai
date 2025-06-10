@@ -1,0 +1,143 @@
+
+
+        elif event['type'] == 'customer.subscription.updated':
+            from datetime import datetime
+            import json
+
+            subscription = event['data']['object']
+            stripe_customer_id = subscription.get('customer')
+            cancel_at_end = subscription.get("cancel_at_period_end")
+
+            items_data = subscription.get('items', {}).get('data', [])
+            ends_at = items_data[0].get("current_period_end") if items_data else None
+            subscription_end_date = (
+                datetime.utcfromtimestamp(ends_at).isoformat()
+                if ends_at else datetime.utcnow().isoformat()
+            )
+
+            if not stripe_customer_id:
+                print(f"⚠️ Missing customer in subscription.updated event.")
+                return '', 200
+
+            if ends_at is None:
+                print(f"⚠️ Ends_at was missing, using current UTC time instead → {subscription_end_date}")
+
+            price_to_plan = {
+                "price_1RSmUX2MKajKZrXPjg7pnMCf": "pro",
+                "price_1RSlus2MKajKZrXPHsYpvBYE": "plus",
+            }
+
+            price_id = items_data[0]["price"]["id"] if items_data else None
+            new_plan = price_to_plan.get(price_id, "unknown")
+
+            if subscription.get("schedule"):
+                try:
+                    schedule_id = subscription["schedule"]
+                    print(f"📋 Fetching schedule: {schedule_id}")
+                    schedule_obj = stripe.SubscriptionSchedule.retrieve(schedule_id)
+                    future_phases = schedule_obj.get("phases", [])
+                    print(f"📋 Full schedule phases object:\n{json.dumps(future_phases, indent=2)}")
+
+                    now_unix = int(datetime.utcnow().timestamp())
+                    scheduled_plan = None
+
+                    for phase in future_phases:
+                        if phase.get("start_date", 0) > now_unix:
+                            future_price_id = phase["items"][0]["price"]
+                            scheduled_plan = price_to_plan.get(future_price_id, "unknown")
+                            print(f"🧠 Detected future scheduled plan: {scheduled_plan}")
+                            break
+
+                    if scheduled_plan and scheduled_plan != new_plan:
+                        new_plan = scheduled_plan
+                        print(f"📅 Scheduled switch to: {new_plan} at next billing cycle.")
+                    else:
+                        print(f"🟡 No future scheduled plan change. Keeping plan as: {new_plan}")
+
+                except Exception as e:
+                    print(f"⚠️ Failed to retrieve scheduled plan: {e}")
+
+            print(f"🔁 Final resolved plan for webhook: {new_plan}")
+            print(json.dumps(subscription, indent=2))
+
+            conn = sqlite3.connect('newsletter.db')
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, plan FROM users WHERE stripe_customer_id = ?", (stripe_customer_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                print(f"⚠️ No user found for Stripe customer {stripe_customer_id}")
+                conn.close()
+                return '', 200
+
+            user_id, current_plan = row
+            if user_id is None:
+                print("⚠️ Fetched user_id is None")
+                conn.close()
+                return '', 200
+
+            user_id = int(user_id)
+            print(f"🔁 Plan change detected: {current_plan} → {new_plan}, cancel_at_end={cancel_at_end}")
+
+            cursor.execute("""
+                UPDATE users 
+                SET subscription_end_date = ?
+                WHERE id = ?
+            """, (subscription_end_date, user_id))
+
+            if cancel_at_end is False:
+                print("🧪 Branch: cancel_at_end is False")
+                if new_plan == current_plan:
+                    print("🧪 Sub-branch: No plan change")
+                    cursor.execute("""
+                        UPDATE users
+                        SET downgrade_to = NULL
+                        WHERE id = ?
+                    """, (user_id,))
+                    print(f"🚫 downgrade_to cleared for user {user_id}")
+                else:
+                    print("🧪 Sub-branch: Plan changed")
+                    cursor.execute("""
+                        UPDATE users 
+                        SET downgrade_to = ?
+                        WHERE id = ?
+                    """, (new_plan, user_id))
+                    print(f"📦 downgrade_to set to {new_plan} for user {user_id}")
+
+            elif cancel_at_end:
+                print("🧪 Branch: cancel_at_end is True")
+                cursor.execute("""
+                    UPDATE users 
+                    SET downgrade_to = ?
+                    WHERE id = ?
+                """, ("free", user_id))
+                print(f"📅 Cancel scheduled: user {user_id} → free on {subscription_end_date}")
+
+            elif new_plan != current_plan and new_plan != "unknown":
+                print("🧪 Branch: new_plan != current_plan and new_plan != 'unknown'")
+                cursor.execute("""
+                    UPDATE users 
+                    SET downgrade_to = ?
+                    WHERE id = ?
+                """, (new_plan, user_id))
+                print(f"📦 Plan switched without cancel: user {user_id} → {new_plan} stored in downgrade_to")
+
+            else:
+                print(f"ℹ️ Branch: No meaningful change detected")
+
+            # ✅ FINAL CHECK — Apply scheduled downgrade immediately if it exists
+            cursor.execute("SELECT downgrade_to FROM users WHERE id = ?", (user_id,))
+            downgrade_row = cursor.fetchone()
+            downgrade_to = downgrade_row[0] if downgrade_row else None
+
+            if downgrade_to:
+                print(f"🕒 Final check: applying scheduled downgrade_to={downgrade_to} for user {user_id}")
+                cursor.execute("""
+                    UPDATE users 
+                    SET plan = ?, downgrade_to = NULL
+                    WHERE id = ?
+                """, (downgrade_to, user_id))
+                print(f"✅ Plan downgraded immediately to {downgrade_to} and downgrade_to cleared.")
+
+            conn.commit()
+            conn.close()

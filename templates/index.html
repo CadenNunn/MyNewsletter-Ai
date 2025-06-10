@@ -1,49 +1,259 @@
 {% extends "base.html" %}
 
-{% block title %}MyNewsletter AI{% endblock %}
+{% block title %}MyNewsletter AI – Built for Students{% endblock %}
 
 {% block content %}
 
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('typewriter', () => ({
+      texts: ["Built for students.", "Curated by AI.", "Smarter every week."],
+      currentText: '',
+      currentIndex: 0,
+      isDeleting: false,
+      async init() {
+        while (true) {
+          const fullText = this.texts[this.currentIndex];
+          if (this.isDeleting) {
+            this.currentText = fullText.substring(0, this.currentText.length - 1);
+          } else {
+            this.currentText = fullText.substring(0, this.currentText.length + 1);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, this.isDeleting ? 50 : 100));
+
+          if (!this.isDeleting && this.currentText === fullText) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            this.isDeleting = true;
+          } else if (this.isDeleting && this.currentText === '') {
+            this.isDeleting = false;
+            this.currentIndex = (this.currentIndex + 1) % this.texts.length;
+          }
+        }
+      }
+    }));
+
+    Alpine.data('timeline', () => ({
+      steps: [
+        { title: "🧠 Choose Your Topic", desc: "Pick what you're curious about—AI, sports, healthcare, anything." },
+        { title: "🎯 Select Your Audience", desc: "Write just for yourself, a friend, or a study group." },
+        { title: "🎵 Pick Your Tone", desc: "Formal, motivational, chill—match your vibe." },
+        { title: "📬 Set Delivery & Email", desc: "Choose frequency—weekly, biweekly, monthly—and email." }
+      ],
+      dotY: 0,
+      init() {
+        console.log("✅ timeline.init() fired");
+        this.trackScroll();
+      },
+      trackScroll() {
+        const update = () => {
+          const middle = window.scrollY + window.innerHeight / 2;
+          let best = { dist: Infinity, y: 0 };
+
+          this.steps.forEach((_, i) => {
+            const el = document.getElementById('step' + i);
+            if (!el) {
+              console.warn('❌ step' + i + ' not found');
+              return;
+            }
+
+            const rect = el.getBoundingClientRect();
+            const center = window.scrollY + rect.top + rect.height / 2;
+            const dist = Math.abs(center - middle);
+            if (dist < best.dist) best = { dist, y: center };
+          });
+
+          const timelineTop = document.getElementById("timeline-track").getBoundingClientRect().top + window.scrollY;
+          this.dotY = best.y - timelineTop;
+          console.log("📍 dotY:", this.dotY);
+
+          requestAnimationFrame(update);
+        };
+        update();
+      }
+    }));
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    AOS.init({ duration: 700, once: true });
+  });
+</script>
+
 <!-- Hero Section -->
-<section class="bg-gray-100 py-20 text-center px-4">
-  <h1 class="heading-1 text-5xl mb-4">Build Beautiful Newsletters, Effortlessly</h1>
-  <p class="subheading text-xl mb-8">Create and schedule high-quality email newsletters in minutes — no writing or design skills needed.</p>
-  <a href="/build-newsletter" class="btn-primary text-lg rounded-full">Start Today</a>
+<section 
+  class="relative min-h-[calc(100vh-80px)] bg-cover bg-center flex items-center justify-center text-white text-center"
+  style="background-image: url('https://i.ibb.co/93s7Xf8n/hero-image.webp');"
+>
+  <!-- Overlay -->
+  <div class="absolute inset-0 bg-black bg-opacity-60"></div>
+
+  <!-- Hero Content -->
+  <div class="relative z-10 max-w-2xl px-4" x-data="typewriter()" x-init="init()">
+    <h1 class="text-4xl sm:text-5xl font-bold mb-4" data-aos="fade-up">
+      Study Smarter with AI-Curated Newsletters
+    </h1>
+    <p class="text-lg sm:text-xl mb-6 h-8" data-aos="fade-up" data-aos-delay="100">
+      <span x-text="currentText"></span>
+    </p>
+    <a href="/build-newsletter" class="btn-primary text-lg" data-aos="fade-up" data-aos-delay="200">
+      Start Free →
+    </a>
+  </div>
 </section>
 
-<!-- Features Section -->
-<section class="py-20 px-6 max-w-5xl mx-auto">
-  <div class="grid md:grid-cols-3 gap-10 text-center">
-    <div>
-      <h2 class="heading-2 mb-2">🎯 Targeted Content</h2>
-      <p class="body-text">Create newsletters tailored to your audience with demographic-aware AI prompts.</p>
+
+<!-- Feature Highlights -->
+<!-- Gradient Top Separator -->
+<div class="h-24 bg-gradient-to-b from-white to-gray-50"></div>
+
+<!-- Feature Highlights (Theme-Aligned) -->
+<section class="py-24 px-6 max-w-6xl mx-auto bg-gray-50">
+  <h2 class="heading-2 text-center mb-16" data-aos="fade-up">
+    Why Students Love It
+  </h2>
+
+  <div class="grid md:grid-cols-3 gap-10">
+    <!-- Card 1 -->
+    <div 
+      class="bg-white rounded-2xl p-8 shadow-md hover:shadow-lg transition-transform transform hover:-translate-y-1 ring-1 ring-blue-100 text-center"
+      data-aos="fade-up"
+    >
+      <div class="flex justify-center mb-6">
+        <div class="w-14 h-14 bg-theme-1 text-white text-2xl rounded-full flex items-center justify-center">
+          🧠
+        </div>
+      </div>
+      <h3 class="font-semibold text-lg mb-2 text-theme-1">Personalized to You</h3>
+      <p class="body-text">Tell us your topic and who it’s for. Your newsletter is 100% custom.</p>
     </div>
-    <div>
-      <h2 class="heading-2 mb-2">⚡ Fast & Automated</h2>
-      <p class="body-text">Generate, schedule, and send—all in one flow. No design or copywriting needed.</p>
+
+    <!-- Card 2 -->
+    <div 
+      class="bg-white rounded-2xl p-8 shadow-md hover:shadow-lg transition-transform transform hover:-translate-y-1 ring-1 ring-blue-100 text-center"
+      data-aos="fade-up"
+      data-aos-delay="100"
+    >
+      <div class="flex justify-center mb-6">
+        <div class="w-14 h-14 bg-theme-1 text-white text-2xl rounded-full flex items-center justify-center">
+          😵‍💫
+        </div>
+      </div>
+      <h3 class="font-semibold text-lg mb-2 text-theme-1">End Info Overload</h3>
+      <p class="body-text">No more tab chaos. Learn in 1 click, not 10.</p>
     </div>
-    <div>
-      <h2 class="heading-2 mb-2">📬 Scheduled Delivery</h2>
-      <p class="body-text">We handle the sending for you. Choose frequency, sit back, and relax.</p>
+
+    <!-- Card 3 -->
+    <div 
+      class="bg-white rounded-2xl p-8 shadow-md hover:shadow-lg transition-transform transform hover:-translate-y-1 ring-1 ring-blue-100 text-center"
+      data-aos="fade-up"
+      data-aos-delay="200"
+    >
+      <div class="flex justify-center mb-6">
+        <div class="w-14 h-14 bg-theme-1 text-white text-2xl rounded-full flex items-center justify-center">
+          ⏱️
+        </div>
+      </div>
+      <h3 class="font-semibold text-lg mb-2 text-theme-1">Set It & Forget It</h3>
+      <p class="body-text">Get updates weekly, biweekly, or monthly—your call.</p>
     </div>
   </div>
 </section>
 
-<!-- Testimonials Section -->
-<section class="bg-blue-50 py-20 px-6">
+<!-- Divider Bottom -->
+<hr class="my-20 border-t border-gray-200">
+
+<!-- 4-Step Builder Walkthrough – Timeline Experience -->
+<section class="bg-gray-50 px-6 py-32" x-data="timeline()" x-init="init()">
   <div class="max-w-4xl mx-auto text-center">
-    <h2 class="heading-1 mb-10">What People Are Saying</h2>
-    <div class="grid md:grid-cols-2 gap-8 text-left">
-      <div class="bg-white p-6 rounded-xl shadow">
-        <p class="body-text mb-4">"I created a professional-looking newsletter in under 10 minutes. This platform is a game-changer."</p>
-        <p class="font-semibold">— Emily R., Small Business Owner</p>
-      </div>
-      <div class="bg-white p-6 rounded-xl shadow">
-        <p class="body-text mb-4">"The AI-generated content was shockingly good. I’ve already scheduled my next month of newsletters."</p>
-        <p class="font-semibold">— Mark D., Marketing Consultant</p>
-      </div>
+    <h2 class="text-4xl font-bold text-gray-800 mb-24" data-aos="fade-up">
+      A Step‑by‑Step Path to Your Newsletter
+    </h2>
+  </div>
+
+  <!-- Timeline Scroll Area -->
+  <div class="relative max-w-3xl mx-auto" id="timeline-track">
+    <!-- Vertical Line -->
+    <div class="absolute left-1/2 top-0 bottom-0 w-1 bg-blue-100 transform -translate-x-1/2 z-0"></div>
+
+    <!-- Steps -->
+    <div class="flex flex-col items-center space-y-48 relative z-10">
+      <template x-for="(step, i) in steps" :key="i">
+        <div class="bg-white p-8 rounded-2xl shadow-md text-center max-w-xl w-full">
+          <div class="text-sm font-semibold uppercase text-blue-600 mb-2" x-text="'Step ' + (i+1)"></div>
+          <h3 class="text-2xl font-bold mb-3" x-text="step.title"></h3>
+          <p class="text-gray-600 text-lg leading-relaxed" x-text="step.desc"></p>
+        </div>
+      </template>
     </div>
   </div>
 </section>
+
+<!-- Alpine.js + AOS -->
+<link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => AOS.init({ duration: 700, once: true }));
+
+  function timeline() {
+    return {
+      steps: [
+        { title: "🧠 Choose Your Topic", desc: "Pick what you're curious about—AI, sports, healthcare, anything." },
+        { title: "🎯 Select Your Audience", desc: "Write just for yourself, a friend, or a study group." },
+        { title: "🎵 Pick Your Tone", desc: "Formal, motivational, chill—match your vibe." },
+        { title: "📬 Set Delivery & Email", desc: "Choose frequency—weekly, biweekly, monthly—and email." }
+      ],
+      dotY: 0,
+      init() {
+        // Wait a tick for DOM to be ready
+        setTimeout(() => {
+          this.updateDot(); // initialize once
+          window.addEventListener('scroll', this.updateDot.bind(this));
+        }, 100); // slight delay to avoid 0 height errors
+      },
+      updateDot() {
+        const track = document.getElementById("timeline-track");
+        if (!track) return;
+
+        const trackRect = track.getBoundingClientRect();
+        const scrollY = window.scrollY;
+        const trackTop = scrollY + trackRect.top;
+        const trackHeight = track.offsetHeight;
+        const middleY = scrollY + window.innerHeight / 2;
+
+        const clampedY = Math.min(Math.max(middleY, trackTop), trackTop + trackHeight);
+        this.dotY = clampedY - trackTop;
+      }
+    }
+  }
+</script>
+
+<!-- SVG Divider -->
+<div class="relative">
+  <svg class="absolute top-0 left-0 w-full h-16 text-white" preserveAspectRatio="none" viewBox="0 0 1440 100">
+    <path fill="currentColor" d="M0,32L1440,96L1440,0L0,0Z"></path>
+  </svg>
+</div>
+
+<section class="py-20 px-4 text-center bg-gradient-to-b from-white to-gray-50 relative z-10">
+  <h2 class="heading-1 text-3xl sm:text-4xl mb-4" data-aos="fade-up">
+    Your AI Newsletter is Waiting
+  </h2>
+  <p class="subheading text-lg mb-6" data-aos="fade-up" data-aos-delay="100">
+    Takes 30 seconds to set up. No credit card required.
+  </p>
+  <a href="/build-newsletter" class="btn-primary text-lg" data-aos="fade-up" data-aos-delay="200">
+    Get Started Free →
+  </a>
+  <p class="text-sm text-gray-500 mt-4" data-aos="fade-up" data-aos-delay="300">
+    No spam. Cancel anytime.
+  </p>
+</section>
+
 
 {% endblock %}

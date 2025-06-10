@@ -1,0 +1,159 @@
+@app.route('/change-plan/<plan>')
+def change_plan(plan):
+    if 'user_id' not in session:
+        flash("Please log in to manage your subscription.")
+        return redirect(url_for('login'))
+
+    if plan not in STRIPE_PRICES:
+        flash("Invalid plan selected.")
+        return redirect(url_for('pricing'))
+
+    user_id = session['user_id']
+
+    # Get current subscription ID
+    conn = sqlite3.connect('newsletter.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT subscription_id FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or not row[0]:
+        flash("No active subscription found.")
+        return redirect(url_for('pricing'))
+
+    subscription_id = row[0]
+
+    try:
+        subscription = stripe.Subscription.retrieve(subscription_id)
+        subscription_item_id = subscription['items']['data'][0]['id']
+
+        # ✅ Modify the plan at period end
+        stripe.Subscription.modify(
+            subscription_id,
+            cancel_at_period_end=True,
+            items=[{
+                'id': subscription_item_id,
+                'price': STRIPE_PRICES[plan],
+            }]
+        )
+
+        # ✅ Get the period end safely
+        ends_at = (
+            subscription.get('current_period_end') or
+            subscription['items']['data'][0].get('current_period_end')
+        )
+
+        if not ends_at:
+            raise ValueError("Could not determine current_period_end")
+
+        from datetime import datetime
+        end_date = datetime.utcfromtimestamp(ends_at).isoformat()
+
+        # ✅ Update DB with downgrade target and date
+        conn = sqlite3.connect('newsletter.db')
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE users
+            SET downgrade_to = ?, subscription_end_date = ?
+            WHERE id = ?
+        """, (plan, end_date, user_id))
+        conn.commit()
+        conn.close()
+
+        flash(f"✅ Your plan will downgrade to {plan.capitalize()} at the end of your billing period.")
+    except Exception as e:
+        print("❌ Error changing plan:", e)
+        flash("Something went wrong while scheduling your downgrade.")
+
+    return redirect(url_for('pricing'))
+
+#----------------- Cancel Subscription-----
+@app.route('/cancel-subscription')
+def cancel_subscription():
+    if 'user_id' not in session:
+        flash("Please log in to manage your subscription.")
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    conn = sqlite3.connect('newsletter.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT subscription_id FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    subscription_id = row[0] if row else None
+
+    if subscription_id:
+        try:
+            # Schedule cancellation at end of billing period
+            stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
+
+            # Retrieve subscription to get end date
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            ends_at = subscription['items']['data'][0].get('current_period_end')
+
+            if ends_at is None:
+                flash("Stripe subscription info was incomplete. Try again later or contact support.")
+                print("❌ Subscription does not contain current_period_end.")
+            else:
+                from datetime import datetime
+                end_date = datetime.utcfromtimestamp(ends_at).isoformat()
+
+                # Update DB: end date + downgrade_to = 'free'
+                cursor.execute("""
+                    UPDATE users 
+                    SET subscription_end_date = ?, downgrade_to = 'free'
+                    WHERE id = ?
+                """, (end_date, user_id))
+                conn.commit()
+
+                flash("✅ Subscription will end after this billing period. You’ll remain on your plan until then.")
+                print(f"📅 Saved end date: {end_date} | Downgrade set to Free for user {user_id}")
+        except Exception as e:
+            print("❌ Stripe error during cancellation:", e)
+            flash("Something went wrong canceling your subscription.")
+    else:
+        flash("No active subscription to cancel.")
+
+    conn.close()
+    return redirect(url_for('pricing'))
+
+
+#--------------- Keep Plan ----------------
+@app.route('/uncancel-subscription')
+def uncancel_subscription():
+    if 'user_id' not in session:
+        flash("Please log in to manage your subscription.")
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    conn = sqlite3.connect('newsletter.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT subscription_id FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    subscription_id = row[0] if row else None
+
+    if subscription_id:
+        try:
+            # Restore subscription by removing cancellation
+            stripe.Subscription.modify(subscription_id, cancel_at_period_end=False)
+
+            # Clear both end date and downgrade target
+            cursor.execute("""
+                UPDATE users 
+                SET subscription_end_date = NULL, downgrade_to = NULL
+                WHERE id = ?
+            """, (user_id,))
+            conn.commit()
+
+            flash("✅ You’ve kept your current plan.")
+            print(f"🔄 Cancelation removed for user {user_id}")
+        except Exception as e:
+            print("❌ Error un-canceling subscription:", e)
+            flash("Something went wrong restoring your plan.")
+    else:
+        flash("No active subscription found.")
+
+    conn.close()
+    return redirect(url_for('pricing'))
+

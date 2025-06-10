@@ -29,6 +29,37 @@
       {% endif %}
     {% endwith %}
 
+    <!-- Subscription Information -->
+    <div class="bg-white rounded-xl shadow p-6 mb-10 border border-blue-200">
+      <h3 class="text-blue-700 text-lg font-semibold mb-2">Subscription Info</h3>
+
+      {% if current_plan == 'free' %}
+        <p class="text-sm text-gray-700">You are currently on the <strong>Free</strong> plan.</p>
+        <p class="text-sm text-gray-500 mt-1">Upgrade to unlock additional features and automation tools.</p>
+        <div class="mt-4">
+          <a href="/pricing" class="btn-outline text-sm">View Paid Plans</a>
+        </div>
+      {% else %}
+        <div class="space-y-2 text-sm text-gray-700">
+          <p><strong>Plan:</strong> {{ current_plan|capitalize }}</p>
+          <p><strong>Cost:</strong> {{ plan_cost }}</p>
+          <p class="flex items-center gap-2">
+            <strong>Next Billing Date:</strong>
+            <span class="inline-flex items-center bg-blue-50 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full">
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              {{ next_billing_date }}
+            </span>
+          </p>
+
+        </div>
+        <div class="mt-4">
+          <a href="{{ url_for('stripe_portal') }}" class="btn-outline text-sm">Manage Billing</a>
+        </div>
+      {% endif %}
+    </div>
+
     <!-- Password Section -->
     <div class="bg-white rounded-xl shadow p-6 mb-10">
       {% if not edit_mode %}
@@ -48,12 +79,12 @@
               <button type="button" onclick="togglePassword('current_password', 'eyeSlash1')" class="absolute inset-y-0 right-2 flex items-center text-gray-500">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5
-                      c4.477 0 8.268 2.943 9.542 7
-                      -1.274 4.057-5.065 7-9.542 7
-                      -4.477 0-8.268-2.943-9.542-7z" />
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5
+                          c4.477 0 8.268 2.943 9.542 7
+                          -1.274 4.057-5.065 7-9.542 7
+                          -4.477 0-8.268-2.943-9.542-7z" />
                   <line id="eyeSlash1" x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2" class="hidden" />
                 </svg>
               </button>
@@ -67,12 +98,12 @@
               <button type="button" onclick="togglePassword('new_password', 'eyeSlash2')" class="absolute inset-y-0 right-2 flex items-center text-gray-500">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5
-                      c4.477 0 8.268 2.943 9.542 7
-                      -1.274 4.057-5.065 7-9.542 7
-                      -4.477 0-8.268-2.943-9.542-7z" />
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5
+                          c4.477 0 8.268 2.943 9.542 7
+                          -1.274 4.057-5.065 7-9.542 7
+                          -4.477 0-8.268-2.943-9.542-7z" />
                   <line id="eyeSlash2" x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2" class="hidden" />
                 </svg>
               </button>
@@ -86,12 +117,12 @@
               <button type="button" onclick="togglePassword('confirm_password', 'eyeSlash3')" class="absolute inset-y-0 right-2 flex items-center text-gray-500">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5
-                      c4.477 0 8.268 2.943 9.542 7
-                      -1.274 4.057-5.065 7-9.542 7
-                      -4.477 0-8.268-2.943-9.542-7z" />
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5
+                          c4.477 0 8.268 2.943 9.542 7
+                          -1.274 4.057-5.065 7-9.542 7
+                          -4.477 0-8.268-2.943-9.542-7z" />
                   <line id="eyeSlash3" x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2" class="hidden" />
                 </svg>
               </button>
@@ -121,12 +152,12 @@
             <button type="button" onclick="togglePassword('danger_password', 'eyeSlash4')" class="absolute inset-y-0 right-2 flex items-center text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5
-                    c4.477 0 8.268 2.943 9.542 7
-                    -1.274 4.057-5.065 7-9.542 7
-                    -4.477 0-8.268-2.943-9.542-7z" />
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5
+                        c4.477 0 8.268 2.943 9.542 7
+                        -1.274 4.057-5.065 7-9.542 7
+                        -4.477 0-8.268-2.943-9.542-7z" />
                 <line id="eyeSlash4" x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2" class="hidden" />
               </svg>
             </button>
@@ -173,5 +204,7 @@
     slash.classList.toggle("hidden", !isHidden);
   }
 </script>
+
+<div class="mb-20"></div>
 
 {% endblock %}
