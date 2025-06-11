@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from newsletter_writer import write_full_newsletter
 
@@ -10,6 +10,7 @@ import requests
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 import time  # ✅ Added for delay before deletion request
+from dateutil.relativedelta import relativedelta  # ✅ Needed for monthly scheduling
 
 # Load environment variables
 load_dotenv()
@@ -27,7 +28,7 @@ def send_email(to_email, subject, html_content):
     print(f"📩 Preparing to send email to {to_email}")
     print(f"📄 Subject: {subject}")
     print(f"🧩 Template ID: {BREVO_TEMPLATE_ID}")
-    print(f"🧾 Content preview:\n{html_content[:300]}...\n")
+    print(f"🗞 Content preview:\n{html_content[:300]}...\n")
 
     configuration = sib_api_v3_sdk.Configuration()
     configuration.api_key['api-key'] = BREVO_API_KEY
@@ -143,6 +144,24 @@ def check_and_send():
 
         conn.commit()
 
+        # ⏭️ Update next_send_time based on frequency
+        frequency = plan['frequency']
+        if frequency == 'daily':
+            next_time = now + timedelta(days=1)
+        elif frequency == 'weekly':
+            next_time = now + timedelta(weeks=1)
+        elif frequency == 'biweekly':
+            next_time = now + timedelta(weeks=2)
+        elif frequency == 'monthly':
+            next_time = now + relativedelta(months=1)
+        else:
+            next_time = now + timedelta(days=7)
+
+        c.execute("""
+            UPDATE newsletters SET next_send_time = ? WHERE id = ?
+        """, (next_time.isoformat(), plan_id))
+        conn.commit()
+
         # ✅ Check if this plan is complete
         c.execute("""
             SELECT COUNT(*) FROM emails 
@@ -189,4 +208,3 @@ def check_and_send():
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_and_send, 'interval', minutes=1)
 print("🕒 Scheduler started. Checking every 1 minute.")
-
