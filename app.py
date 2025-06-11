@@ -294,6 +294,9 @@ def create_newsletter():
 # ---------------- Confirmation & DB Storage ----------------
 @app.route('/confirm-newsletter', methods=['POST'])
 def confirm_newsletter():
+    from datetime import datetime, timedelta, timezone
+    import pytz
+
     data = session.get('newsletter', {})
     if not data:
         return redirect(url_for('build_newsletter'))
@@ -314,7 +317,14 @@ def confirm_newsletter():
 
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     if send_time == 'now':
-        first_send = now
+        send_time_str = request.form.get('send_time')
+
+        try:
+            # Parse send_time from UTC ISO format (e.g. "2025-06-10T13:00")
+            first_send = datetime.strptime(send_time_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+        except:
+            first_send = now  # fallback
+
     elif send_time == 'tomorrow':
         first_send = now + timedelta(days=1)
     elif send_time == 'in_2_days':
@@ -324,7 +334,14 @@ def confirm_newsletter():
     elif send_time == 'next_week':
         first_send = now + timedelta(days=7)
     else:
-        first_send = now
+        try:
+            naive = datetime.fromisoformat(send_time)
+            local = pytz.timezone("America/Chicago").localize(naive)
+            first_send = local.astimezone(timezone.utc)
+            print("🕒 Custom time converted to UTC:", first_send.isoformat())
+        except Exception as e:
+            print("❌ Error parsing custom time, defaulting to now:", e)
+            first_send = now
 
     freq_map = {'daily': 1, 'weekly': 7, 'biweekly': 14, 'monthly': 30}
     interval_days = freq_map.get(frequency.lower(), 7)
@@ -538,6 +555,7 @@ def dashboard():
 
 
 #-------------- Change Send Timer ---------
+from pytz import utc
 
 @app.route('/update-send-time', methods=['POST'])
 def update_send_time():
@@ -552,6 +570,7 @@ def update_send_time():
     # Parse datetime-local input
     try:
         new_send_time = datetime.strptime(new_time_str, "%Y-%m-%dT%H:%M")
+        new_send_time = new_send_time.replace(tzinfo=utc).astimezone(utc).replace(tzinfo=None)
     except ValueError:
         flash("Invalid date format.")
         return redirect('/dashboard')

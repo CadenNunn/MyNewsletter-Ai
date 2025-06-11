@@ -22,19 +22,19 @@
 </div>
 
 <script>
-  // Pass UTC datetime as ISO string to JS
-  const utcDateStr = "{{ next_send if next_send else '' }}";
-  if (utcDateStr) {
-    const utcDate = new Date(utcDateStr);
-    const localStr = utcDate.toLocaleString(undefined, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
+  const utc = "{{ next_send }}";
+  try {
+    const local = new Date(utc).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
       hour12: true,
     });
-    document.getElementById("local-send-time").textContent = localStr;
+    document.getElementById("local-send-time").textContent = local;
+  } catch (e) {
+    document.getElementById("local-send-time").textContent = "Invalid time.";
   }
 </script>
 {% endblock %}

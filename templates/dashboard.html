@@ -215,9 +215,12 @@
             dateFormat: 'Y-m-d\\TH:i',
             defaultDate: this.modalData.date,
             minDate: '{{ min_datetime }}',
-            onChange: (selectedDates, dateStr) => {
-              this.modalData.date = dateStr;
+            onChange: (selectedDates) => {
+              const localDate = selectedDates[0];
+              const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
+              this.modalData.date = utcDate.toISOString().slice(0, 16);
             }
+
           });
         });
       },
