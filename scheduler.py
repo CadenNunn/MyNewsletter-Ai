@@ -73,7 +73,7 @@ def check_and_send():
 
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-
+    conn = sqlite3.connect('newsletter.db')
     c.execute("""
         SELECT * FROM emails
         WHERE sent = 0 AND send_date <= ?
