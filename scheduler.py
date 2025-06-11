@@ -1,7 +1,7 @@
 import sqlite3
 import json
 from datetime import datetime, timezone
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from newsletter_writer import write_full_newsletter
 
 import os
@@ -189,4 +189,4 @@ def check_and_send():
 scheduler = BlockingScheduler()
 scheduler.add_job(check_and_send, 'interval', minutes=1)
 print("🕒 Scheduler started. Checking every 1 minute.")
-scheduler.start()
+

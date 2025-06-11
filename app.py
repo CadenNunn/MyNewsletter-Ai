@@ -30,6 +30,9 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY")
 
+from scheduler import scheduler
+scheduler.start()
+
 
 # Plan-based limits
 PLAN_FEATURES = {
