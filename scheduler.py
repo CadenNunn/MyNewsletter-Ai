@@ -52,7 +52,8 @@ def send_email(to_email, subject, html_content):
         print(f"❌ Brevo API Exception while sending to {to_email}: {e}")
 
 def get_recent_newsletters(user_id, limit=5):
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     c = conn.cursor()
     c.execute("""
         SELECT content FROM past_newsletters
@@ -68,7 +69,8 @@ def get_recent_newsletters(user_id, limit=5):
 
 def check_and_send():
     now = datetime.now(timezone.utc)
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -160,7 +162,8 @@ def check_and_send():
         if plan_complete:
             try:
                 for i in range(5):
-                    verify_conn = sqlite3.connect('newsletter.db')
+                    verify_conn = sqlite3.connect('/mnt/data/newsletter.db')
+
                     verify_cursor = verify_conn.cursor()
                     verify_cursor.execute("SELECT COUNT(*) FROM emails WHERE plan_id = ? AND sent = 1", (plan_id,))
                     verified_sent = verify_cursor.fetchone()[0]

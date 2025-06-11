@@ -45,7 +45,8 @@ STRIPE_PRICES = {
 }
 
 def get_user_email(user_id):
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     cursor = conn.cursor()
     cursor.execute("SELECT email FROM users WHERE id = ?", (user_id,))
     row = cursor.fetchone()
@@ -57,7 +58,8 @@ def get_user_email(user_id):
 def delete_newsletter_plan(plan_id, user_id, retries=5, delay=0.5):
     for attempt in range(retries):
         try:
-            conn = sqlite3.connect('newsletter.db')
+            conn = sqlite3.connect('/mnt/data/newsletter.db')
+
             c = conn.cursor()
             c.execute("DELETE FROM newsletters WHERE id = ?", (plan_id,))
             c.execute("DELETE FROM emails WHERE plan_id = ?", (plan_id,))
@@ -97,7 +99,8 @@ def check_and_delete_plan():
     time.sleep(1)
 
     # 🔍 Get user_id for the plan
-    conn1 = sqlite3.connect('newsletter.db')
+    conn1 = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn1.row_factory = sqlite3.Row
     c1 = conn1.cursor()
     c1.execute("SELECT user_id FROM newsletters WHERE id = ?", (plan_id,))
@@ -111,7 +114,8 @@ def check_and_delete_plan():
     print(f"👤 Found user_id={user_id} for plan_id={plan_id}")
 
     # 🔁 Re-check total vs sent counts
-    conn2 = sqlite3.connect('newsletter.db')
+    conn2 = sqlite3.connect('/mnt/data/newsletter.db')
+
     c2 = conn2.cursor()
 
     c2.execute("SELECT COUNT(*) FROM emails WHERE plan_id = ?", (plan_id,))
@@ -141,7 +145,8 @@ def inject_subscription_context():
         return {}
 
     try:
-        conn = sqlite3.connect('newsletter.db')
+        conn = sqlite3.connect('/mnt/data/newsletter.db')
+
         cursor = conn.cursor()
         cursor.execute("""
             SELECT subscription_end_date, downgrade_to 
@@ -207,7 +212,8 @@ def build_newsletter():
 
     user_id = session['user_id']
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     cursor = conn.cursor()
 
     # Get user's plan
@@ -346,7 +352,8 @@ def confirm_newsletter():
     freq_map = {'daily': 1, 'weekly': 7, 'biweekly': 14, 'monthly': 30}
     interval_days = freq_map.get(frequency.lower(), 7)
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn.execute("PRAGMA foreign_keys = ON")
     c = conn.cursor()
 
@@ -402,7 +409,7 @@ def confirm_newsletter():
     conn.commit()
     conn.close()
 
-    return render_template("success.html", next_send=first_send.strftime("%B %d, %Y %I:%M %p"))
+    return render_template("success.html", next_send=first_send.isoformat())
 
 # ---------------- User Registration ----------------
 @app.route('/register', methods=['GET', 'POST'])
@@ -418,7 +425,8 @@ def register():
 
         hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
 
-        conn = sqlite3.connect('newsletter.db')
+        conn = sqlite3.connect('/mnt/data/newsletter.db')
+
         conn.execute("PRAGMA foreign_keys = ON")
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -449,7 +457,8 @@ def login():
         email = request.form['email']
         password = request.form['password']
 
-        conn = sqlite3.connect('newsletter.db')
+        conn = sqlite3.connect('/mnt/data/newsletter.db')
+
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         c = conn.cursor()
@@ -491,7 +500,8 @@ def dashboard():
         return redirect(url_for('login'))
 
     user_id = session['user_id']
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -580,7 +590,8 @@ def update_send_time():
         flash("Send time must be at least one week from now.")
         return redirect('/dashboard')
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     c = conn.cursor()
 
     # Check ownership + get frequency
@@ -630,7 +641,7 @@ def delete_newsletter():
     user_id = session['user_id']
     plan_id = request.form.get('plan_id')
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
     c = conn.cursor()
 
     # Verify the plan belongs to the user
@@ -662,7 +673,8 @@ def toggle_newsletter_status():
     user_id = session['user_id']
     newsletter_id = request.form.get('newsletter_id')
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     cursor = conn.cursor()
 
     # Check current status
@@ -751,7 +763,8 @@ def deactivate_newsletter():
     user_id = session['user_id']
     newsletter_id = request.form.get('newsletter_id')
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -797,7 +810,8 @@ def account_settings():
             flash("New passwords do not match.")
             return redirect(url_for('account_settings', mode='edit'))
 
-        conn = sqlite3.connect('newsletter.db')
+        conn = sqlite3.connect('/mnt/data/newsletter.db')
+
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
@@ -818,7 +832,8 @@ def account_settings():
         return redirect(url_for('account_settings'))
 
     # Fetch subscription details
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT plan, subscription_end_date FROM users WHERE id = ?", (user_id,))
@@ -865,7 +880,8 @@ def stripe_portal():
     user_id = session['user_id']
 
     # Get Stripe customer ID from DB
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT stripe_customer_id FROM users WHERE id = ?", (user_id,))
@@ -899,7 +915,8 @@ def delete_account():
     user_id = session['user_id']
     entered_password = request.form['confirm_password']
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     c = conn.cursor()
@@ -943,7 +960,8 @@ def pricing():
         return redirect(url_for('login'))
 
     user_id = session['user_id']
-    conn = sqlite3.connect('newsletter.db')
+    conn = sqlite3.connect('/mnt/data/newsletter.db')
+
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT plan, downgrade_to, subscription_end_date FROM users WHERE id = ?", (user_id,))
@@ -993,7 +1011,8 @@ def create_checkout_session(plan):
 
     try:
         # ✅ Check if user already has a Stripe customer ID
-        conn = sqlite3.connect('newsletter.db')
+        conn = sqlite3.connect('/mnt/data/newsletter.db')
+
         cursor = conn.cursor()
         cursor.execute("SELECT stripe_customer_id FROM users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
@@ -1073,7 +1092,8 @@ def stripe_webhook():
             ends_at = items_data[0].get('current_period_end') if items_data else None
             subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
 
-            conn = sqlite3.connect('newsletter.db')
+            conn = sqlite3.connect('/mnt/data/newsletter.db')
+
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE users 
@@ -1103,7 +1123,8 @@ def stripe_webhook():
             ends_at = items_data[0].get("current_period_end") if items_data else None
             subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
 
-            conn = sqlite3.connect('newsletter.db')
+            conn = sqlite3.connect('/mnt/data/newsletter.db')
+
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE users 
@@ -1116,7 +1137,8 @@ def stripe_webhook():
             print(f"📅 Subscription end date updated to {subscription_end_date} for customer {stripe_customer_id}")
 
             if cancel_at_end:
-                conn = sqlite3.connect('newsletter.db')
+                conn = sqlite3.connect('/mnt/data/newsletter.db')
+
                 cursor = conn.cursor()
 
                 # Map current Stripe price ID to plan name for logging
@@ -1163,7 +1185,8 @@ def stripe_webhook():
             if ends_at is None:
                 print(f"⚠️ Ends_at was missing, using current UTC time instead → {subscription_end_date}")
 
-            conn = sqlite3.connect('newsletter.db')
+            conn = sqlite3.connect('/mnt/data/newsletter.db')
+
             cursor = conn.cursor()
             cursor.execute("SELECT id, downgrade_to FROM users WHERE stripe_customer_id = ?", (stripe_customer_id,))
             row = cursor.fetchone()
