@@ -23,7 +23,7 @@
 
 <script>
   // Pass UTC datetime as ISO string to JS
-  const utcDateStr = "{{ next_send.isoformat() if next_send else '' }}";
+  const utcDateStr = "{{ next_send if next_send else '' }}";
   if (utcDateStr) {
     const utcDate = new Date(utcDateStr);
     const localStr = utcDate.toLocaleString(undefined, {
