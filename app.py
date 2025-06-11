@@ -7,7 +7,7 @@ import stripe
 import openai
 from werkzeug.security import check_password_hash
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from gpt_planner import create_email_plan
 import json
 
@@ -73,6 +73,7 @@ def delete_newsletter_plan(plan_id, user_id, retries=5, delay=0.5):
             else:
                 print(f"❌ Final DB error: {e}")
                 return False
+
 #----------- Scheduler auto delete check -------
 @app.route('/check-and-delete-plan', methods=['POST'])
 def check_and_delete_plan():
@@ -155,10 +156,10 @@ def inject_subscription_context():
 
         days_left = None
         if subscription_end_date and subscription_end_date.strip():
-            from datetime import datetime
+            from datetime import datetime, timedelta, timezone
             try:
                 end_date = datetime.fromisoformat(subscription_end_date)
-                from datetime import date
+                from datetime import date, timedelta, timezone
                 days_left = (end_date.date() - date.today()).days
                 if days_left < 0:
                     days_left = None
@@ -184,7 +185,7 @@ def home():
 
 # ---------- Date Formating ------------
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 @app.template_filter('format_datetime')
 def format_datetime(value):
@@ -311,7 +312,7 @@ def confirm_newsletter():
     section_titles = data.get('section_titles')
     summary = data.get('summary')
 
-    now = datetime.now().replace(second=0, microsecond=0)
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     if send_time == 'now':
         first_send = now
     elif send_time == 'tomorrow':
@@ -680,9 +681,9 @@ def toggle_newsletter_status():
             return redirect(url_for('dashboard'))
 
     # Toggle status
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    now = datetime.utcnow().replace(second=0, microsecond=0)
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     cursor.execute("SELECT frequency FROM newsletters WHERE id = ?", (newsletter_id,))
     frequency_row = cursor.fetchone()
     frequency = frequency_row[0].lower() if frequency_row else 'weekly'
@@ -806,7 +807,7 @@ def account_settings():
     conn.close()
 
     current_plan = user['plan']
-    from datetime import datetime
+    from datetime import datetime, timedelta, timezone
 
     raw_date = user['subscription_end_date']
     try:
@@ -937,7 +938,7 @@ def pricing():
     # Calculate days left until downgrade (if applicable)
     subscription_days_left = None
     if subscription_end_date:
-        from datetime import datetime
+        from datetime import datetime, timedelta, timezone
         from math import ceil
         try:
             dt = datetime.fromisoformat(subscription_end_date)
@@ -1037,7 +1038,7 @@ def stripe_webhook():
     try:
         # ✅ New subscription via checkout
         if event['type'] == 'checkout.session.completed':
-            from datetime import datetime
+            from datetime import datetime, timedelta, timezone
             session_data = event['data']['object']
             user_id = session_data.get('metadata', {}).get('user_id')
             new_plan = session_data.get('metadata', {}).get('new_plan')
@@ -1068,7 +1069,7 @@ def stripe_webhook():
 
             #✅ Subscription updated
         elif event['type'] == 'customer.subscription.updated':
-            from datetime import datetime
+            from datetime import datetime, timedelta, timezone
             subscription = event['data']['object']
             stripe_customer_id = subscription.get('customer')
             cancel_at_end = subscription.get("cancel_at_period_end")
@@ -1126,7 +1127,7 @@ def stripe_webhook():
 
         # ✅ Subscription cancelled
         elif event['type'] == 'customer.subscription.deleted':
-            from datetime import datetime
+            from datetime import datetime, timedelta, timezone
             subscription = event['data']['object']
             stripe_customer_id = subscription.get('customer')
             ends_at = subscription.get("current_period_end")

@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from apscheduler.schedulers.blocking import BlockingScheduler
 from newsletter_writer import write_full_newsletter
 
@@ -67,7 +67,7 @@ def get_recent_newsletters(user_id, limit=5):
     return "\n\n---\n\n".join([r[0] for r in rows])
 
 def check_and_send():
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     conn = sqlite3.connect('newsletter.db')
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
