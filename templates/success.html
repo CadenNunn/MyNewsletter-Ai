@@ -10,7 +10,8 @@
     <p class="body-text mb-4">We’ve saved your content and scheduled it for delivery.</p>
 
     <div class="bg-gray-100 text-gray-700 text-sm py-3 px-4 rounded mb-6">
-      <span class="font-medium">First send:</span> {{ next_send }}
+      <span class="font-medium">First send:</span>
+      <span id="local-send-time">Loading...</span>
     </div>
 
     <div class="space-y-3">
@@ -19,4 +20,21 @@
     </div>
   </div>
 </div>
+
+<script>
+  // Pass UTC datetime as ISO string to JS
+  const utcDateStr = "{{ next_send.isoformat() if next_send else '' }}";
+  if (utcDateStr) {
+    const utcDate = new Date(utcDateStr);
+    const localStr = utcDate.toLocaleString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    document.getElementById("local-send-time").textContent = localStr;
+  }
+</script>
 {% endblock %}

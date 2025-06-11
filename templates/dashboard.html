@@ -71,8 +71,11 @@
             <div><span class="font-medium text-gray-500">Frequency:</span> {{ n['frequency'] }}</div>
             <div>
               <span class="font-medium text-gray-500">Next:</span>
-              <span class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded">
-                {{ n['next_send_time']|format_datetime }}
+                            <span
+                class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded"
+                data-utc="{{ n['next_send_time'] }}"
+              >
+                Loading local time...
               </span>
             </div>
           </div>
@@ -149,8 +152,11 @@
             <div><span class="font-medium text-gray-500">Frequency:</span> {{ n['frequency'] }}</div>
             <div>
               <span class="font-medium text-gray-500">Next:</span>
-              <span class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded">
-                {{ n['next_send_time']|format_datetime }}
+                            <span
+                class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded"
+                data-utc="{{ n['next_send_time'] }}"
+              >
+                Loading local time...
               </span>
             </div>
           </div>
@@ -244,6 +250,21 @@
   </div>
 {% endif %}
 
+<script>
+  document.querySelectorAll('[data-utc]').forEach(el => {
+    const utcStr = el.getAttribute('data-utc');
+    const date = new Date(utcStr);
+    const local = date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    el.textContent = local;
+  });
+</script>
 
 
 {% endblock %}
