@@ -186,7 +186,7 @@ def check_and_send():
 
     conn.close()  # ✅ Now correctly placed outside the loop
 
-scheduler = BlockingScheduler()
+scheduler = BackgroundScheduler()
 scheduler.add_job(check_and_send, 'interval', minutes=1)
 print("🕒 Scheduler started. Checking every 1 minute.")
 
