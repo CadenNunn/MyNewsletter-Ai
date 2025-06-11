@@ -53,7 +53,6 @@ def send_email(to_email, subject, html_content):
 
 def get_recent_newsletters(user_id, limit=5):
     conn = sqlite3.connect('/mnt/data/newsletter.db')
-
     c = conn.cursor()
     c.execute("""
         SELECT content FROM past_newsletters
@@ -70,9 +69,14 @@ def get_recent_newsletters(user_id, limit=5):
 def check_and_send():
     now = datetime.now(timezone.utc)
     conn = sqlite3.connect('/mnt/data/newsletter.db')
-
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+
+    # 🔍 TEMP DEBUGGING
+    c.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = c.fetchall()
+    print("🧠 Tables in DB:", tables)
+
     c.execute("""
         SELECT * FROM emails
         WHERE sent = 0 AND send_date <= ?
@@ -156,13 +160,10 @@ def check_and_send():
         plan_complete = (sent == total)
         print(f"✅ Plan complete? {plan_complete}")
 
-        conn.close()
-
         if plan_complete:
             try:
                 for i in range(5):
                     verify_conn = sqlite3.connect('/mnt/data/newsletter.db')
-
                     verify_cursor = verify_conn.cursor()
                     verify_cursor.execute("SELECT COUNT(*) FROM emails WHERE plan_id = ? AND sent = 1", (plan_id,))
                     verified_sent = verify_cursor.fetchone()[0]
@@ -182,6 +183,8 @@ def check_and_send():
                 print(f"🧹 Cleanup response: {response.text}")
             except Exception as e:
                 print(f"❌ Failed to delete plan {plan_id}: {e}")
+
+    conn.close()  # ✅ Now correctly placed outside the loop
 
 scheduler = BlockingScheduler()
 scheduler.add_job(check_and_send, 'interval', minutes=1)
