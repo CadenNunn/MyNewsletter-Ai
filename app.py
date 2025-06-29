@@ -10,8 +10,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta, timezone
 from gpt_planner import create_email_plan
 import json
-from adminer import adminer
-app.register_blueprint(adminer)
 
 
 
