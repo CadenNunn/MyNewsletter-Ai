@@ -10,6 +10,20 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta, timezone
 from gpt_planner import create_email_plan
 import json
+from db import SessionLocal
+from models import User, Review, Newsletter, Email, PastNewsletter
+from db import SessionLocal
+from models import Newsletter, Email
+from sqlalchemy import func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import asc, desc
+
+
+
+
+# ✅ Add these for PostgreSQL
+import psycopg2
+import psycopg2.extras
 
 
 
@@ -48,14 +62,16 @@ STRIPE_PRICES = {
     "pro": "price_1RSVeL2MKajKZrXP4yIxSw58"
 }
 
-def get_user_email(user_id):
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+from db import SessionLocal
+from models import User
 
-    cursor = conn.cursor()
-    cursor.execute("SELECT email FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row else None
+def get_user_email(user_id):
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        return user.email if user else None
+    finally:
+        db.close()
 
 
 
@@ -68,33 +84,40 @@ def serve_adminer():
 
 
 #---------- Scheduler auto delete ------------
+import time
+from db import SessionLocal
+from models import Newsletter, Email, PastNewsletter
+
 def delete_newsletter_plan(plan_id, user_id, retries=5, delay=0.5):
     for attempt in range(retries):
         try:
-            conn = sqlite3.connect('/mnt/data/newsletter.db')
+            db = SessionLocal()
+            try:
+                db.query(Newsletter).filter(Newsletter.id == plan_id).delete()
+                db.query(Email).filter(Email.plan_id == plan_id).delete()
+                db.query(PastNewsletter).filter(PastNewsletter.plan_id == plan_id).delete()
+                db.commit()
+                print(f"✅ Plan {plan_id} successfully deleted.")
+                return True
+            except Exception as e:
+                db.rollback()
+                if "locked" in str(e).lower() and attempt < retries - 1:
+                    print(f"⚠️ DB locked, retrying... ({attempt + 1})")
+                    time.sleep(delay)
+                else:
+                    print(f"❌ Final DB error: {e}")
+                    return False
+            finally:
+                db.close()
+        except Exception as outer_e:
+            print(f"❌ Outer DB error on attempt {attempt + 1}: {outer_e}")
+            time.sleep(delay)
+    return False  # fallback if all retries fail
 
-            c = conn.cursor()
-            c.execute("DELETE FROM newsletters WHERE id = ?", (plan_id,))
-            c.execute("DELETE FROM emails WHERE plan_id = ?", (plan_id,))
-            c.execute("DELETE FROM past_newsletters WHERE plan_id = ?", (plan_id,))
-            conn.commit()
-            conn.close()
-            print(f"✅ Plan {plan_id} successfully deleted.")
-            return True
-        except sqlite3.OperationalError as e:
-            if "database is locked" in str(e) and attempt < retries - 1:
-                print(f"⚠️ DB locked, retrying... ({attempt + 1})")
-                time.sleep(delay)
-            else:
-                print(f"❌ Final DB error: {e}")
-                return False
+# ----------- Scheduler auto delete check ------
 
-#----------- Scheduler auto delete check -------
 @app.route('/check-and-delete-plan', methods=['POST'])
 def check_and_delete_plan():
-    import time
-    import sqlite3
-
     plan_id = request.form.get("plan_id")
     print(f"📥 Incoming /check-and-delete-plan request with plan_id={plan_id}")
 
@@ -108,39 +131,24 @@ def check_and_delete_plan():
         print(f"❌ plan_id '{plan_id}' is not a valid integer")
         return "Invalid plan_id", 400
 
-    # ✅ Short delay to allow scheduler DB commits to flush
     time.sleep(1)
 
-    # 🔍 Get user_id for the plan
-    conn1 = sqlite3.connect('/mnt/data/newsletter.db')
+    db = SessionLocal()
+    try:
+        newsletter = db.query(Newsletter).filter(Newsletter.id == plan_id).first()
+        if not newsletter:
+            print(f"❌ [Flask] No newsletter plan found for ID {plan_id}")
+            return "Plan not found", 404
+        user_id = newsletter.user_id
+        print(f"👤 Found user_id={user_id} for plan_id={plan_id}")
 
-    conn1.row_factory = sqlite3.Row
-    c1 = conn1.cursor()
-    c1.execute("SELECT user_id FROM newsletters WHERE id = ?", (plan_id,))
-    row = c1.fetchone()
-    if not row:
-        conn1.close()
-        print(f"❌ [Flask] No newsletter plan found for ID {plan_id}")
-        return "Plan not found", 404
-    user_id = row["user_id"]
-    conn1.close()
-    print(f"👤 Found user_id={user_id} for plan_id={plan_id}")
+        total = db.query(Email).filter(Email.plan_id == plan_id).count()
+        sent = db.query(Email).filter(Email.plan_id == plan_id, Email.sent == True).count()
 
-    # 🔁 Re-check total vs sent counts
-    conn2 = sqlite3.connect('/mnt/data/newsletter.db')
-
-    c2 = conn2.cursor()
-
-    c2.execute("SELECT COUNT(*) FROM emails WHERE plan_id = ?", (plan_id,))
-    total = c2.fetchone()[0]
-
-    c2.execute("SELECT COUNT(*) FROM emails WHERE plan_id = ? AND sent = 1", (plan_id,))
-    sent = c2.fetchone()[0]
-
-    conn2.close()
-
-    print(f"📊 Total emails in plan {plan_id}: {total}")
-    print(f"📬 Sent emails for plan {plan_id}: {sent}")
+        print(f"📊 Total emails in plan {plan_id}: {total}")
+        print(f"📬 Sent emails for plan {plan_id}: {sent}")
+    finally:
+        db.close()
 
     if sent == total:
         print(f"🗑️ [Flask] All emails sent. Auto-deleting plan {plan_id}")
@@ -157,27 +165,17 @@ def inject_subscription_context():
     if 'user_id' not in session:
         return {}
 
+    db = SessionLocal()
     try:
-        conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT subscription_end_date, downgrade_to 
-            FROM users 
-            WHERE id = ?
-        """, (session['user_id'],))
-        row = cursor.fetchone()
-        conn.close()
-
-        downgrade_to = row[1] if row else None
-        subscription_end_date = row[0] if row else None
+        user = db.query(User).filter(User.id == session['user_id']).first()
+        downgrade_to = user.downgrade_to if user else None
+        subscription_end_date = user.subscription_end_date if user else None
 
         days_left = None
         if subscription_end_date and subscription_end_date.strip():
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime, date
             try:
                 end_date = datetime.fromisoformat(subscription_end_date)
-                from datetime import date, timedelta, timezone
                 days_left = (end_date.date() - date.today()).days
                 if days_left < 0:
                     days_left = None
@@ -191,24 +189,29 @@ def inject_subscription_context():
 
     except Exception as e:
         print("❌ Error injecting subscription context:", e)
-
-    return {}
+        return {}
+    finally:
+        db.close()
 
 
 # ---------------- Home ----------------
 @app.route('/')
 def home():
-    import sqlite3
-    conn = sqlite3.connect('newsletter.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    cursor.execute('SELECT name, stars, comment FROM reviews ORDER BY id DESC LIMIT 10')
-    rows = cursor.fetchall()
-    conn.close()
-
-    reviews = [dict(row) for row in rows]
-    return render_template('index.html', reviews=reviews)
+    db = SessionLocal()
+    try:
+        reviews_query = (
+            db.query(Review.name, Review.stars, Review.comment)
+            .order_by(Review.id.desc())
+            .limit(10)
+            .all()
+        )
+        reviews = [
+            {"name": r.name, "stars": r.stars, "comment": r.comment}
+            for r in reviews_query
+        ]
+        return render_template('index.html', reviews=reviews)
+    finally:
+        db.close()
 
 
 
@@ -236,35 +239,27 @@ def build_newsletter():
         return redirect(url_for('login'))
 
     user_id = session['user_id']
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
 
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+        if not user:
+            flash("Could not verify your plan. Please try again.")
+            return redirect(url_for('dashboard'))
 
-    cursor = conn.cursor()
+        plan = user.plan
+        limits = PLAN_FEATURES.get(plan, {'max_total': 1, 'max_active': 1})
 
-    # Get user's plan
-    cursor.execute("SELECT plan FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
+        total_count = db.query(Newsletter).filter(Newsletter.user_id == user_id).count()
 
-    if not row:
-        conn.close()
-        flash("Could not verify your plan. Please try again.")
-        return redirect(url_for('dashboard'))
+        if limits['max_total'] is not None and total_count >= limits['max_total']:
+            flash("You’ve reached your plan’s newsletter limit. Upgrade to create more.")
+            return redirect(url_for('dashboard'))
 
-    plan = row[0]
-    limits = PLAN_FEATURES.get(plan, {'max_total': 1, 'max_active': 1})
+        return render_template('build.html')
 
-    # Count newsletters
-    cursor.execute("SELECT COUNT(*) FROM newsletters WHERE user_id = ?", (user_id,))
-    total_count = cursor.fetchone()[0]
-
-    conn.close()
-
-    # ✅ Only enforce total limit (not active limit)
-    if limits['max_total'] is not None and total_count >= limits['max_total']:
-        flash("You’ve reached your plan’s newsletter limit. Upgrade to create more.")
-        return redirect(url_for('dashboard'))
-
-    return render_template('build.html')
+    finally:
+        db.close()
 
 @app.route('/generate-newsletter')
 def generate_newsletter():
@@ -335,7 +330,6 @@ def confirm_newsletter():
     frequency = request.form.get('frequency')
     send_time = request.form.get('send_time')
     plan_title = request.form.get('plan_title')
-
     data['frequency'] = frequency
 
     user_id = data.get('user_id')
@@ -347,15 +341,9 @@ def confirm_newsletter():
     summary = data.get('summary')
 
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+
     if send_time == 'now':
-        send_time_str = request.form.get('send_time')
-
-        try:
-            # Parse send_time from UTC ISO format (e.g. "2025-06-10T13:00")
-            first_send = datetime.strptime(send_time_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
-        except:
-            first_send = now  # fallback
-
+        first_send = now
     elif send_time == 'tomorrow':
         first_send = now + timedelta(days=1)
     elif send_time == 'in_2_days':
@@ -377,62 +365,61 @@ def confirm_newsletter():
     freq_map = {'daily': 1, 'weekly': 7, 'biweekly': 14, 'monthly': 30}
     interval_days = freq_map.get(frequency.lower(), 7)
 
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-    conn.execute("PRAGMA foreign_keys = ON")
-    c = conn.cursor()
+    db = SessionLocal()
 
     # ✅ Plan-based activation decision
-    c.execute("SELECT plan FROM users WHERE id = ?", (user_id,))
-    user_plan_row = c.fetchone()
-    plan = user_plan_row[0].lower() if user_plan_row else 'free'
+    user = db.query(User).filter(User.id == user_id).first()
+    plan = user.plan.lower() if user and user.plan else 'free'
     limits = PLAN_FEATURES.get(plan, {'max_active': 1})
 
-    c.execute("SELECT COUNT(*) FROM newsletters WHERE user_id = ? AND is_active = 1", (user_id,))
-    active_count = c.fetchone()[0]
+    active_count = db.query(func.count()).select_from(Newsletter).filter(
+        Newsletter.user_id == user_id,
+        Newsletter.is_active == True
+    ).scalar()
 
     is_active = 1 if limits['max_active'] is None or active_count < limits['max_active'] else 0
-    is_active = int(is_active)  # Ensure value is safe
 
     print("📊 Plan:", plan)
     print("📊 Active Count:", active_count)
     print("📌 Final is_active value:", is_active)
 
     # ✅ Insert newsletter
-    c.execute('''
-        INSERT INTO newsletters (
-            user_id, email, topic, demographic,
-            plan_title, section_titles, summary,
-            frequency, tone, next_send_time, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        user_id, email, topic, demographic,
-        plan_title, json.dumps(section_titles), summary,
-        frequency, tone, first_send.isoformat(), is_active
-    ))
+    new_newsletter = Newsletter(
+        user_id=user_id,
+        email=email,
+        topic=topic,
+        demographic=demographic,
+        plan_title=plan_title,
+        section_titles=json.dumps(section_titles),
+        summary=summary,
+        frequency=frequency,
+        tone=tone,
+        next_send_time=first_send,
+        is_active=is_active
+    )
+    db.add(new_newsletter)
+    db.commit()
 
-    plan_id = c.lastrowid
-    c.execute("UPDATE newsletters SET plan_id = ? WHERE rowid = ?", (plan_id, plan_id))
+    new_newsletter.plan_id = new_newsletter.id
+    db.commit()
 
-    # 🧾 Verify the value in DB
-    c.execute("SELECT id, is_active FROM newsletters WHERE id = ?", (plan_id,))
-    result = c.fetchone()
-    print("🧾 Inserted Newsletter ID:", result[0], "| is_active =", result[1])
+    print("🧾 Inserted Newsletter ID:", new_newsletter.id, "| is_active =", new_newsletter.is_active)
 
-    # Insert scheduled emails
+    # ✅ Insert scheduled emails
     for i, title in enumerate(section_titles):
         send_date = first_send + timedelta(days=interval_days * i)
-        c.execute('''
-            INSERT INTO emails (
-                user_id, plan_id, position_in_plan,
-                title, send_date, sent
-            ) VALUES (?, ?, ?, ?, ?, 0)
-        ''', (
-            user_id, plan_id, i + 1, title, send_date.isoformat()
-        ))
+        email_obj = Email(
+            user_id=user_id,
+            plan_id=new_newsletter.id,
+            position_in_plan=i + 1,
+            title=title,
+            send_date=send_date,
+            sent=False
+        )
+        db.add(email_obj)
 
-    conn.commit()
-    conn.close()
+    db.commit()
+    db.close()
 
     return render_template("success.html", next_send=first_send.isoformat())
 
@@ -450,28 +437,27 @@ def register():
 
         hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
 
-        conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
+        db = SessionLocal()
         try:
-            c.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)", (email, hashed_password))
-            conn.commit()
+            # Insert user
+            new_user = User(email=email, password_hash=hashed_password)
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)  # Get auto-generated ID
 
-            # ✅ Auto-login after successful registration
-            c.execute("SELECT id FROM users WHERE email = ?", (email,))
-            user = c.fetchone()
-            session['user_id'] = user['id']
-            session['email'] = email
+            # Auto-login
+            session['user_id'] = new_user.id
+            session['email'] = new_user.email
             flash("Account created and logged in successfully!", "auth")
-            conn.close()
             return redirect(url_for('dashboard'))
 
-        except sqlite3.IntegrityError:
-            conn.close()
+        except IntegrityError:
+            db.rollback()
             flash("Email already registered. Please log in instead.", "auth")
             return redirect(url_for('register'))
+
+        finally:
+            db.close()
 
     return render_template('register.html')
 
@@ -482,28 +468,25 @@ def login():
         email = request.form['email']
         password = request.form['password']
 
-        conn = sqlite3.connect('/mnt/data/newsletter.db')
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == email).first()
 
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        c = conn.cursor()
-
-        c.execute("SELECT * FROM users WHERE email = ?", (email,))
-        user = c.fetchone()
-        conn.close()
-
-        if user:
-            if check_password_hash(user['password_hash'], password):
-                session['user_id'] = user['id']
-                session['email'] = user['email']
-                flash("Logged in successfully!", "auth")
-                return redirect(url_for('dashboard'))
+            if user:
+                if check_password_hash(user.password_hash, password):
+                    session['user_id'] = user.id
+                    session['email'] = user.email
+                    flash("Logged in successfully!", "auth")
+                    return redirect(url_for('dashboard'))
+                else:
+                    flash("Incorrect password. Please try again.", "auth")
+                    return redirect(url_for('login'))
             else:
-                flash("Incorrect password. Please try again.", "auth")
+                flash("No account found with that email.", "auth")
                 return redirect(url_for('login'))
-        else:
-            flash("No account found with that email.", "auth")
-            return redirect(url_for('login'))
+
+        finally:
+            db.close()
 
     return render_template('login.html')
 
@@ -517,7 +500,6 @@ def logout():
 
 
 # ---------------- Dashboard --------------
-
 @app.route('/dashboard')
 def dashboard():
     if 'user_id' not in session:
@@ -525,68 +507,79 @@ def dashboard():
         return redirect(url_for('login'))
 
     user_id = session['user_id']
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+    db = SessionLocal()
+    try:
+        # 🔵 Active newsletters
+        newsletters_active = (
+            db.query(Newsletter)
+            .filter(Newsletter.user_id == user_id, Newsletter.is_active == True)
+            .order_by(Newsletter.next_send_time.desc())
+            .all()
+        )
 
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
+        # 🟡 Paused newsletters
+        newsletters_paused = (
+            db.query(Newsletter)
+            .filter(Newsletter.user_id == user_id, Newsletter.is_active == False)
+            .order_by(Newsletter.next_send_time.desc())
+            .all()
+        )
 
-    # 🔵 Active newsletters
-    c.execute("SELECT * FROM newsletters WHERE user_id = ? AND is_active = 1 ORDER BY next_send_time DESC", (user_id,))
-    newsletters_active = c.fetchall()
+        # 🧠 Fetch user's plan
+        user = db.query(User).filter(User.id == user_id).first()
+        user_plan = user.plan.lower() if user and user.plan else 'free'
 
-    # 🟡 Paused newsletters
-    c.execute("SELECT * FROM newsletters WHERE user_id = ? AND is_active = 0 ORDER BY next_send_time DESC", (user_id,))
-    newsletters_paused = c.fetchall()
+        # 🧠 Get progress per plan (sent vs total)
+        email_rows = (
+            db.query(Email.plan_id)
+            .filter(Email.user_id == user_id)
+            .with_entities(
+                Email.plan_id,
+                func.count().label("total"),
+                func.sum(func.cast(Email.sent, Integer)).label("sent")
+            )
+            .group_by(Email.plan_id)
+            .all()
+        )
+        plan_progress = {
+            row.plan_id: {"total": row.total, "sent": row.sent or 0}
+            for row in email_rows
+        }
 
-    # 🧠 Fetch user's plan from the users table
-    c.execute("SELECT plan FROM users WHERE id = ?", (user_id,))
-    user_row = c.fetchone()
-    user_plan = user_row['plan'].lower() if user_row and 'plan' in user_row.keys() else 'free'
+        # 💡 Limits
+        plan_features = PLAN_FEATURES.get(user_plan, PLAN_FEATURES['free'])
+        active_limit = plan_features['max_active']
+        total_limit = plan_features['max_total']
 
-    # 🧠 Get progress per plan (sent vs total)
-    c.execute("""
-        SELECT plan_id, COUNT(*) AS total,
-               SUM(CASE WHEN sent = 1 THEN 1 ELSE 0 END) AS sent
-        FROM emails
-        WHERE user_id = ?
-        GROUP BY plan_id
-    """, (user_id,))
-    plan_progress = {row[0]: {'total': row[1], 'sent': row[2]} for row in c.fetchall()}
+        total_newsletters = newsletters_active + newsletters_paused
 
-    # 💡 Define limits based on PLAN_FEATURES
-    plan_features = PLAN_FEATURES.get(user_plan, PLAN_FEATURES['free'])
-    active_limit = plan_features['max_active']
-    total_limit = plan_features['max_total']
+        # ⏳ Reschedule boundary
+        min_datetime = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
 
-    # 🧮 Total newsletters = active + paused
-    total_newsletters = newsletters_active + newsletters_paused
+        active_count = len(newsletters_active)
+        total_count = len(total_newsletters)
 
-    conn.close()
+        active_limit_display = active_limit if active_limit is not None else 'Unlimited'
+        total_limit_display = total_limit if total_limit is not None else 'Unlimited'
 
-    # ⏳ Minimum reschedule time
-    min_datetime = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
+        return render_template(
+            'dashboard.html',
+            newsletters_active=newsletters_active,
+            newsletters_paused=newsletters_paused,
+            total_newsletters=total_newsletters,
+            min_datetime=min_datetime,
+            active_limit=active_limit,
+            total_limit=total_limit,
+            user_plan=user_plan,
+            active_count=active_count,
+            total_count=total_count,
+            active_limit_display=active_limit_display,
+            total_limit_display=total_limit_display,
+            plan_progress=plan_progress
+        )
 
-    active_count = len(newsletters_active)
-    total_count = len(newsletters_active) + len(newsletters_paused)
-
-    active_limit_display = active_limit if active_limit is not None else 'Unlimited'
-    total_limit_display = total_limit if total_limit is not None else 'Unlimited'
-
-    return render_template(
-        'dashboard.html',
-        newsletters_active=newsletters_active,
-        newsletters_paused=newsletters_paused,
-        total_newsletters=total_newsletters,
-        min_datetime=min_datetime,
-        active_limit=active_limit,
-        total_limit=total_limit,
-        user_plan=user_plan,
-        active_count=active_count,
-        total_count=total_count,
-        active_limit_display=active_limit_display,
-        total_limit_display=total_limit_display,
-        plan_progress=plan_progress
-    )
+    finally:
+        db.close()
 
 
 #-------------- Change Send Timer ---------
@@ -615,48 +608,48 @@ def update_send_time():
         flash("Send time must be at least one week from now.")
         return redirect('/dashboard')
 
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+    db = SessionLocal()
+    try:
+        # Check ownership and get frequency
+        newsletter = db.query(Newsletter).filter(
+            Newsletter.id == plan_id,
+            Newsletter.user_id == user_id
+        ).first()
 
-    c = conn.cursor()
+        if not newsletter:
+            flash("Newsletter not found or access denied.")
+            return redirect('/dashboard')
 
-    # Check ownership + get frequency
-    c.execute("SELECT frequency FROM newsletters WHERE id = ? AND user_id = ?", (plan_id, user_id))
-    row = c.fetchone()
-    if not row:
-        conn.close()
-        flash("Newsletter not found or access denied.")
+        frequency = newsletter.frequency.lower()
+        delta = {
+            "weekly": timedelta(weeks=1),
+            "biweekly": timedelta(weeks=2),
+            "monthly": timedelta(weeks=4)
+        }.get(frequency, timedelta(weeks=1))
+
+        # Update newsletter next_send_time
+        newsletter.next_send_time = new_send_time
+        db.commit()
+
+        # Get future unsent emails
+        unsent_emails = db.query(Email).filter(
+            Email.plan_id == plan_id,
+            Email.sent == False
+        ).order_by(asc(Email.position_in_plan)).all()
+
+        # Update send dates
+        for i, email in enumerate(unsent_emails):
+            email.send_date = new_send_time + i * delta
+
+        db.commit()
+        flash("Send time updated successfully.", "rescheduled")
         return redirect('/dashboard')
 
-    frequency = row[0].lower()
-    delta = {
-        "weekly": timedelta(weeks=1),
-        "biweekly": timedelta(weeks=2),
-        "monthly": timedelta(weeks=4)
-    }.get(frequency, timedelta(weeks=1))
+    finally:
+        db.close()
 
-    # Update newsletter next_send_time
-    c.execute("UPDATE newsletters SET next_send_time = ? WHERE id = ?", (new_send_time, plan_id))
-
-    # Update future unsent emails
-    c.execute("""
-        SELECT email_id, position_in_plan FROM emails
-        WHERE plan_id = ? AND sent = 0
-        ORDER BY position_in_plan ASC
-    """, (plan_id,))
-    emails = c.fetchall()
-
-    for i, (email_id, _) in enumerate(emails):
-        scheduled_date = new_send_time + i * delta
-        c.execute("UPDATE emails SET send_date = ? WHERE email_id = ?", (scheduled_date, email_id))
-
-    conn.commit()
-    conn.close()
-
-    flash("Send time updated successfully.", "rescheduled")
-    return redirect('/dashboard')
 
 # ----------- Delete Newsletter -----------
-
 @app.route('/delete-newsletter', methods=['POST'])
 def delete_newsletter():
     if 'user_id' not in session:
@@ -666,30 +659,36 @@ def delete_newsletter():
     user_id = session['user_id']
     plan_id = request.form.get('plan_id')
 
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
-    c = conn.cursor()
+    db = SessionLocal()
+    try:
+        # Verify the plan belongs to the user
+        newsletter = db.query(Newsletter).filter(
+            Newsletter.id == plan_id,
+            Newsletter.user_id == user_id
+        ).first()
 
-    # Verify the plan belongs to the user
-    c.execute("SELECT id FROM newsletters WHERE id = ? AND user_id = ?", (plan_id, user_id))
-    if not c.fetchone():
-        conn.close()
-        flash("Invalid or unauthorized newsletter plan.")
+        if not newsletter:
+            flash("Invalid or unauthorized newsletter plan.")
+            return redirect(url_for('dashboard'))
+
+        # Delete the newsletter plan
+        db.delete(newsletter)
+
+        # Delete only unsent emails
+        db.query(Email).filter(
+            Email.plan_id == plan_id,
+            Email.sent == False
+        ).delete()
+
+        db.commit()
+        flash("Newsletter plan deleted.", "deleted")
         return redirect(url_for('dashboard'))
 
-    # Delete the newsletter plan
-    c.execute("DELETE FROM newsletters WHERE id = ?", (plan_id,))
-
-    # Delete only unsent emails
-    c.execute("DELETE FROM emails WHERE plan_id = ? AND sent = 0", (plan_id,))
-    conn.commit()
-    conn.close()
-
-    flash("Newsletter plan deleted.", "deleted")
-    return redirect(url_for('dashboard'))
+    finally:
+        db.close()
 
 
 #--------- Toggle Newsletter --------------
-
 @app.route('/toggle-newsletter-status', methods=['POST'])
 def toggle_newsletter_status():
     if 'user_id' not in session:
@@ -698,88 +697,75 @@ def toggle_newsletter_status():
     user_id = session['user_id']
     newsletter_id = request.form.get('newsletter_id')
 
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+    db = SessionLocal()
+    try:
+        # Get current status
+        newsletter = db.query(Newsletter).filter(
+            Newsletter.id == newsletter_id,
+            Newsletter.user_id == user_id
+        ).first()
 
-    cursor = conn.cursor()
+        if not newsletter:
+            flash("Newsletter not found.")
+            return redirect(url_for('dashboard'))
 
-    # Check current status
-    cursor.execute("SELECT is_active FROM newsletters WHERE id = ? AND user_id = ?", (newsletter_id, user_id))
-    row = cursor.fetchone()
+        current_status = newsletter.is_active
 
-    if not row:
-        conn.close()
-        flash("Newsletter not found.")
+        # Check plan limits if activating
+        if current_status == False:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                flash("Could not verify your plan.")
+                return redirect(url_for('dashboard'))
+
+            plan = user.plan
+            limits = PLAN_FEATURES.get(plan, {'max_active': 1})
+
+            active_count = db.query(Newsletter).filter(
+                Newsletter.user_id == user_id,
+                Newsletter.is_active == True
+            ).count()
+
+            if limits['max_active'] is not None and active_count >= limits['max_active']:
+                flash("You’ve reached your active newsletter limit. Pause one to activate another.")
+                return redirect(url_for('dashboard'))
+
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        freq_map = {'daily': 1, 'weekly': 7, 'biweekly': 14, 'monthly': 30}
+        frequency = (newsletter.frequency or "weekly").lower()
+        interval_days = freq_map.get(frequency, 7)
+
+        if current_status == True:
+            # PAUSING: is_active = False, clear future unsent emails
+            newsletter.is_active = False
+            db.query(Email).filter(
+                Email.plan_id == newsletter_id,
+                Email.user_id == user_id,
+                Email.sent == False
+            ).update({Email.send_date: None})
+        else:
+            # RESUMING: is_active = True, set next_send_time
+            newsletter.is_active = True
+            newsletter.next_send_time = now
+
+            unsent_emails = db.query(Email).filter(
+                Email.plan_id == newsletter_id,
+                Email.user_id == user_id,
+                Email.sent == False
+            ).order_by(Email.position_in_plan.asc()).all()
+
+            for i, email in enumerate(unsent_emails):
+                new_send = now + timedelta(days=interval_days * i)
+                email.send_date = new_send
+
+        db.commit()
+        flash("Newsletter status updated.")
         return redirect(url_for('dashboard'))
 
-    current_status = row[0]
-
-    # Only check plan limits if activating
-    if current_status == 0:
-        # Get user's plan
-        cursor.execute("SELECT plan FROM users WHERE id = ?", (user_id,))
-        user_row = cursor.fetchone()
-
-        if not user_row:
-            conn.close()
-            flash("Could not verify your plan.")
-            return redirect(url_for('dashboard'))
-
-        plan = user_row[0]
-        limits = PLAN_FEATURES.get(plan, {'max_active': 1})
-
-        # Count current active newsletters
-        cursor.execute("SELECT COUNT(*) FROM newsletters WHERE user_id = ? AND is_active = 1", (user_id,))
-        active_count = cursor.fetchone()[0]
-
-        if limits['max_active'] is not None and active_count >= limits['max_active']:
-            conn.close()
-            flash("You’ve reached your active newsletter limit. Pause one to activate another.")
-            return redirect(url_for('dashboard'))
-
-    # Toggle status
-    from datetime import datetime, timedelta, timezone
-
-    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    cursor.execute("SELECT frequency FROM newsletters WHERE id = ?", (newsletter_id,))
-    frequency_row = cursor.fetchone()
-    frequency = frequency_row[0].lower() if frequency_row else 'weekly'
-
-    # Map frequency to interval
-    freq_map = {'daily': 1, 'weekly': 7, 'biweekly': 14, 'monthly': 30}
-    interval_days = freq_map.get(frequency, 7)
-
-    if current_status == 1:
-        # PAUSING: set is_active=0, clear future send dates
-        cursor.execute("UPDATE newsletters SET is_active = 0 WHERE id = ? AND user_id = ?", (newsletter_id, user_id))
-        cursor.execute("""
-            UPDATE emails SET send_date = NULL 
-            WHERE plan_id = ? AND user_id = ? AND sent = 0
-        """, (newsletter_id, user_id))
-    else:
-        # RESUMING: set is_active=1, re-anchor from now
-        cursor.execute("UPDATE newsletters SET is_active = 1, next_send_time = ? WHERE id = ? AND user_id = ?", (now.isoformat(), newsletter_id, user_id))
-
-        # Get all unsent emails ordered
-        cursor.execute("""
-            SELECT email_id FROM emails 
-            WHERE plan_id = ? AND user_id = ? AND sent = 0
-            ORDER BY position_in_plan ASC
-        """, (newsletter_id, user_id))
-        unsent_emails = cursor.fetchall()
-
-        # Update send dates from now, spaced by interval
-        for i, (email_id,) in enumerate(unsent_emails):
-            new_send = now + timedelta(days=interval_days * i)
-            cursor.execute("UPDATE emails SET send_date = ? WHERE email_id = ?", (new_send.isoformat(), email_id))
-
-    conn.commit()
-    conn.close()
-
-    flash("Newsletter status updated.")
-    return redirect(url_for('dashboard'))
+    finally:
+        db.close()
 
 #---------- Deactivate Newsletter ---------
-
 @app.route('/deactivate-newsletter', methods=['POST'])
 def deactivate_newsletter():
     if 'user_id' not in session:
@@ -788,34 +774,24 @@ def deactivate_newsletter():
     user_id = session['user_id']
     newsletter_id = request.form.get('newsletter_id')
 
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+    db = SessionLocal()
+    try:
+        newsletter = db.query(Newsletter).filter(
+            Newsletter.id == newsletter_id,
+            Newsletter.user_id == user_id
+        ).first()
 
-    cursor = conn.cursor()
+        if newsletter:
+            newsletter.is_active = False
+            db.commit()
 
-    cursor.execute("""
-        UPDATE newsletters
-        SET is_active = 0
-        WHERE id = ? AND user_id = ?
-    """, (newsletter_id, user_id))
+        flash("Newsletter deactivated successfully.", "rescheduled")
+        return redirect(url_for('dashboard'))
 
-    conn.commit()
-    conn.close()
-
-    flash("Newsletter deactivated successfully.", "rescheduled")
-    return redirect(url_for('dashboard'))
-
-
+    finally:
+        db.close()
 
 #----------------- Account settings -------
-import os
-import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, session, flash
-from werkzeug.security import generate_password_hash, check_password_hash
-import stripe
-
-# Stripe config
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-
 @app.route('/account-settings', methods=['GET', 'POST'])
 def account_settings():
     if 'user_id' not in session:
@@ -826,76 +802,64 @@ def account_settings():
     email = session['email']
     mode = request.args.get('mode')
 
-    if request.method == 'POST':
-        current_password = request.form['current_password']
-        new_password = request.form['new_password']
-        confirm_password = request.form['confirm_password']
-
-        if new_password != confirm_password:
-            flash("New passwords do not match.")
-            return redirect(url_for('account_settings', mode='edit'))
-
-        conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
-        user = c.fetchone()
-
-        if not user or not check_password_hash(user['password_hash'], current_password):
-            flash("Incorrect current password.")
-            conn.close()
-            return redirect(url_for('account_settings', mode='edit'))
-
-        # Update password
-        new_hash = generate_password_hash(new_password, method='pbkdf2:sha256')
-        c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id))
-        conn.commit()
-        conn.close()
-
-        flash("Password updated successfully.")
-        return redirect(url_for('account_settings'))
-
-    # Fetch subscription details
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT plan, subscription_end_date FROM users WHERE id = ?", (user_id,))
-    user = c.fetchone()
-    conn.close()
-
-    current_plan = user['plan']
-    from datetime import datetime, timedelta, timezone
-
-    raw_date = user['subscription_end_date']
+    db = SessionLocal()
     try:
-        parsed = datetime.fromisoformat(raw_date)
-        next_billing_date = parsed.strftime("%B %d, %Y")  # e.g., "July 07, 2025"
-    except Exception as e:
-        print("⚠️ Failed to format billing date:", e)
-        next_billing_date = raw_date or "Unknown"
+        if request.method == 'POST':
+            current_password = request.form['current_password']
+            new_password = request.form['new_password']
+            confirm_password = request.form['confirm_password']
 
+            if new_password != confirm_password:
+                flash("New passwords do not match.")
+                return redirect(url_for('account_settings', mode='edit'))
 
-    # Define cost based on plan
-    plan_costs = {
-        'plus': '$5/month',
-        'pro': '$15/month'
-    }
-    plan_cost = plan_costs.get(current_plan)
+            user = db.query(User).filter(User.id == user_id).first()
 
-    return render_template(
-        'account_settings.html',
-        email=email,
-        user_id=user_id,
-        edit_mode=(mode == 'edit'),
-        current_plan=current_plan,
-        plan_cost=plan_cost,
-        next_billing_date=next_billing_date
-    )
+            if not user or not check_password_hash(user.password_hash, current_password):
+                flash("Incorrect current password.")
+                return redirect(url_for('account_settings', mode='edit'))
 
+            user.password_hash = generate_password_hash(new_password, method='pbkdf2:sha256')
+            db.commit()
 
-# ✅ Dynamic Stripe Portal session (TEST MODE ready)
+            flash("Password updated successfully.")
+            return redirect(url_for('account_settings'))
+
+        # GET: Fetch subscription details
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            flash("User not found.")
+            return redirect(url_for('login'))
+
+        current_plan = user.plan
+        raw_date = user.subscription_end_date
+
+        from datetime import datetime
+        try:
+            parsed = datetime.fromisoformat(raw_date)
+            next_billing_date = parsed.strftime("%B %d, %Y")  # e.g. July 07, 2025
+        except Exception as e:
+            print("⚠️ Failed to format billing date:", e)
+            next_billing_date = raw_date or "Unknown"
+
+        plan_costs = {
+            'plus': '$5/month',
+            'pro': '$15/month'
+        }
+        plan_cost = plan_costs.get(current_plan)
+
+        return render_template(
+            'account_settings.html',
+            email=email,
+            user_id=user_id,
+            edit_mode=(mode == 'edit'),
+            current_plan=current_plan,
+            plan_cost=plan_cost,
+            next_billing_date=next_billing_date
+        )
+
+    finally:
+        db.close()
 @app.route('/stripe-portal')
 def stripe_portal():
     if 'user_id' not in session:
@@ -903,34 +867,29 @@ def stripe_portal():
         return redirect(url_for('login'))
 
     user_id = session['user_id']
-
-    # Get Stripe customer ID from DB
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT stripe_customer_id FROM users WHERE id = ?", (user_id,))
-    user = c.fetchone()
-    conn.close()
-
-    if not user or not user['stripe_customer_id']:
-        flash("Stripe billing info not found.")
-        return redirect(url_for('account_settings'))
-
+    db = SessionLocal()
     try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.stripe_customer_id:
+            flash("Stripe billing info not found.")
+            return redirect(url_for('account_settings'))
+
         session_obj = stripe.billing_portal.Session.create(
-            customer=user['stripe_customer_id'],
+            customer=user.stripe_customer_id,
             return_url=url_for('account_settings', _external=True)
         )
         return redirect(session_obj.url)
+
     except Exception as e:
         print("⚠️ Stripe error:", e)
         flash("Unable to open billing portal.")
         return redirect(url_for('account_settings'))
 
+    finally:
+        db.close()
+
 
 #--------------- Delete Account -----------
-
 @app.route('/delete-account', methods=['POST'])
 def delete_account():
     if 'user_id' not in session:
@@ -940,31 +899,28 @@ def delete_account():
     user_id = session['user_id']
     entered_password = request.form['confirm_password']
 
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
 
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    c = conn.cursor()
+        # Verify password
+        if not user or not check_password_hash(user.password_hash, entered_password):
+            flash("Incorrect password.")
+            return redirect(url_for('account_settings'))
 
-    # Verify password
-    c.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
-    user = c.fetchone()
-    if not user or not check_password_hash(user['password_hash'], entered_password):
-        conn.close()
-        flash("Incorrect password.")
-        return redirect(url_for('account_settings'))
+        # Delete associated data
+        db.query(Email).filter(Email.user_id == user_id).delete()
+        db.query(Newsletter).filter(Newsletter.user_id == user_id).delete()
+        db.delete(user)
 
-    # Delete associated data
-    c.execute("DELETE FROM emails WHERE user_id = ?", (user_id,))
-    c.execute("DELETE FROM newsletters WHERE user_id = ?", (user_id,))
-    c.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+        db.commit()
+        session.clear()
 
-    session.clear()
-    flash("Your account and all associated data have been deleted.")
-    return redirect(url_for('home'))
+        flash("Your account and all associated data have been deleted.")
+        return redirect(url_for('home'))
 
+    finally:
+        db.close()
 
 #-------------- Open Privacy and Terms ----
 
@@ -985,40 +941,36 @@ def pricing():
         return redirect(url_for('login'))
 
     user_id = session['user_id']
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
 
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT plan, downgrade_to, subscription_end_date FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
+        current_plan = user.plan if user else 'free'
+        downgrade_to = user.downgrade_to if user else None
+        subscription_end_date = user.subscription_end_date if user else None
 
-    current_plan = row['plan'] if row else 'free'
-    downgrade_to = row['downgrade_to'] if row else None
-    subscription_end_date = row['subscription_end_date']
+        # Calculate days left until downgrade
+        subscription_days_left = None
+        if subscription_end_date:
+            try:
+                dt = datetime.fromisoformat(subscription_end_date)
+                delta = (dt - datetime.utcnow()).total_seconds() / 86400
+                subscription_days_left = max(ceil(delta), 0)
+            except Exception as e:
+                print("⚠️ Error parsing subscription_end_date:", e)
 
-    # Calculate days left until downgrade (if applicable)
-    subscription_days_left = None
-    if subscription_end_date:
-        from datetime import datetime, timedelta, timezone
-        from math import ceil
-        try:
-            dt = datetime.fromisoformat(subscription_end_date)
-            delta = (dt - datetime.utcnow()).total_seconds() / 86400  # full days
-            subscription_days_left = max(ceil(delta), 0)
-        except Exception as e:
-            print("⚠️ Error parsing subscription_end_date:", e)
+        plan_order = {'free': 0, 'plus': 1, 'pro': 2}
+        current_plan_rank = plan_order.get(current_plan, 0)
 
-    plan_order = {'free': 0, 'plus': 1, 'pro': 2}
-    current_plan_rank = plan_order.get(current_plan, 0)
-
-    return render_template(
-        "pricing.html",
-        current_plan=current_plan,
-        current_plan_rank=current_plan_rank,
-        downgrade_to=downgrade_to,
-        subscription_days_left=subscription_days_left
-    )
+        return render_template(
+            "pricing.html",
+            current_plan=current_plan,
+            current_plan_rank=current_plan_rank,
+            downgrade_to=downgrade_to,
+            subscription_days_left=subscription_days_left
+        )
+    finally:
+        db.close()
 
 #-------------- Checkout ----------------
 @app.route('/create-checkout-session/<plan>')
@@ -1032,30 +984,26 @@ def create_checkout_session(plan):
         return redirect(url_for('pricing'))
 
     user_id = session['user_id']
-    user_email = get_user_email(user_id)
+    user_email = get_user_email(user_id)  # ✅ Already converted to use SQLAlchemy earlier
 
+    db = SessionLocal()
     try:
-        # ✅ Check if user already has a Stripe customer ID
-        conn = sqlite3.connect('/mnt/data/newsletter.db')
+        # ✅ Get or create Stripe customer ID
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            flash("User not found.")
+            return redirect(url_for('pricing'))
 
-        cursor = conn.cursor()
-        cursor.execute("SELECT stripe_customer_id FROM users WHERE id = ?", (user_id,))
-        row = cursor.fetchone()
-        stripe_customer_id = row[0] if row else None
-
-        # ✅ If not, create a new Stripe customer and store it
-        if not stripe_customer_id:
+        if not user.stripe_customer_id:
             customer = stripe.Customer.create(email=user_email)
-            stripe_customer_id = customer.id
-            cursor.execute("UPDATE users SET stripe_customer_id = ? WHERE id = ?", (stripe_customer_id, user_id))
-            conn.commit()
-        conn.close()
+            user.stripe_customer_id = customer.id
+            db.commit()
 
-        # ✅ Use customer ID for session (not just email)
+        # ✅ Create Stripe checkout session
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             mode='subscription',
-            customer=stripe_customer_id,
+            customer=user.stripe_customer_id,
             line_items=[{
                 'price': STRIPE_PRICES[plan],
                 'quantity': 1
@@ -1074,8 +1022,13 @@ def create_checkout_session(plan):
         print("Stripe Checkout Error:", e)
         flash("Something went wrong starting your payment.")
         return redirect(url_for('pricing'))
+    finally:
+        db.close()
 
 #---------------- Webhook -------------
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 @app.route('/webhook', methods=['POST'])
 def stripe_webhook():
     payload = request.data
@@ -1099,9 +1052,12 @@ def stripe_webhook():
         return 'Error', 400
 
     try:
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        cursor = conn.cursor()
+
         # ✅ New subscription via checkout
         if event['type'] == 'checkout.session.completed':
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime
             session_data = event['data']['object']
             user_id = session_data.get('metadata', {}).get('user_id')
             new_plan = session_data.get('metadata', {}).get('new_plan')
@@ -1117,23 +1073,18 @@ def stripe_webhook():
             ends_at = items_data[0].get('current_period_end') if items_data else None
             subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
 
-            conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-            cursor = conn.cursor()
             cursor.execute("""
                 UPDATE users 
-                SET plan = ?, subscription_id = ?, stripe_customer_id = ?, subscription_end_date = ?, downgrade_to = NULL
-                WHERE id = ?
+                SET plan = %s, subscription_id = %s, stripe_customer_id = %s, subscription_end_date = %s, downgrade_to = NULL
+                WHERE id = %s
             """, (new_plan, subscription_id, customer_id, subscription_end_date, int(user_id)))
             conn.commit()
-            conn.close()
 
             print(f"✅ Plan updated: user {user_id} → {new_plan}")
             print(f"📅 Next Billing Date: {subscription_end_date}")
 
-            #✅ Subscription updated
         elif event['type'] == 'customer.subscription.updated':
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime
             subscription = event['data']['object']
             stripe_customer_id = subscription.get('customer')
             cancel_at_end = subscription.get("cancel_at_period_end")
@@ -1143,57 +1094,42 @@ def stripe_webhook():
                 print("⚠️ Missing Stripe customer ID in subscription.updated")
                 return '', 200
 
-            # ✅ Always update subscription_end_date using correct path
             items_data = subscription.get('items', {}).get('data', [])
             ends_at = items_data[0].get("current_period_end") if items_data else None
             subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
 
-            conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-            cursor = conn.cursor()
             cursor.execute("""
                 UPDATE users 
-                SET subscription_end_date = ?
-                WHERE stripe_customer_id = ?
+                SET subscription_end_date = %s
+                WHERE stripe_customer_id = %s
             """, (subscription_end_date, stripe_customer_id))
             conn.commit()
-            conn.close()
 
             print(f"📅 Subscription end date updated to {subscription_end_date} for customer {stripe_customer_id}")
 
             if cancel_at_end:
-                conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-                cursor = conn.cursor()
-
-                # Map current Stripe price ID to plan name for logging
                 price_map = {
                     "price_1RSVeL2MKajKZrXP4yIxSw58": "pro",
                     "price_1RSVe72MKajKZrXPrsuvcvnO": "plus"
                 }
                 current_plan_name = price_map.get(current_price_id, "unknown")
-
-                # Always downgrade to 'free'
                 downgrade_to = "free"
 
-                cursor.execute("SELECT id FROM users WHERE stripe_customer_id = ?", (stripe_customer_id,))
+                cursor.execute("SELECT id FROM users WHERE stripe_customer_id = %s", (stripe_customer_id,))
                 row = cursor.fetchone()
 
                 if not row:
                     print(f"⚠️ No user found with customer_id={stripe_customer_id}")
-                    conn.close()
                     return '', 200
 
-                user_id = row[0]
-                cursor.execute("UPDATE users SET downgrade_to = ? WHERE id = ?", (downgrade_to, user_id))
+                user_id = row['id']
+                cursor.execute("UPDATE users SET downgrade_to = %s WHERE id = %s", (downgrade_to, user_id))
                 conn.commit()
-                conn.close()
 
                 print(f"📌 Saved downgrade_to='{downgrade_to}' for user {user_id} (currently on {current_plan_name}, cancel_at_period_end=True)")
 
-        # ✅ Subscription cancelled
         elif event['type'] == 'customer.subscription.deleted':
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime
             subscription = event['data']['object']
             stripe_customer_id = subscription.get('customer')
             ends_at = subscription.get("current_period_end")
@@ -1210,91 +1146,74 @@ def stripe_webhook():
             if ends_at is None:
                 print(f"⚠️ Ends_at was missing, using current UTC time instead → {subscription_end_date}")
 
-            conn = sqlite3.connect('/mnt/data/newsletter.db')
-
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, downgrade_to FROM users WHERE stripe_customer_id = ?", (stripe_customer_id,))
+            cursor.execute("SELECT id, downgrade_to FROM users WHERE stripe_customer_id = %s", (stripe_customer_id,))
             row = cursor.fetchone()
 
             if not row:
                 print(f"⚠️ No user found for Stripe customer {stripe_customer_id}")
-                conn.close()
                 return '', 200
 
-            user_id, downgrade_to = row
-            if user_id is None:
-                print("⚠️ Fetched user_id is None")
-                conn.close()
-                return '', 200
-
-            user_id = int(user_id)  # ✅ Ensure correct type
-
+            user_id, downgrade_to = row['id'], row['downgrade_to']
             new_plan = downgrade_to if downgrade_to else 'free'
-            if not downgrade_to:
-                print(f"⚠️ downgrade_to was not previously saved for user {user_id}, defaulting to 'free'")
 
             cursor.execute("""
                 UPDATE users 
-                SET plan = ?, subscription_id = NULL, subscription_end_date = ?, downgrade_to = NULL
-                WHERE id = ?
+                SET plan = %s, subscription_id = NULL, subscription_end_date = %s, downgrade_to = NULL
+                WHERE id = %s
             """, (new_plan, subscription_end_date, user_id))
 
-            # ✅ Enforce plan limits after downgrade
             limits = PLAN_FEATURES.get(new_plan, {'max_total': 1, 'max_active': 1})
 
             cursor.execute("""
                 SELECT id, is_active 
                 FROM newsletters 
-                WHERE user_id = ? 
+                WHERE user_id = %s 
                 ORDER BY next_send_time ASC
             """, (user_id,))
             newsletters = cursor.fetchall()
 
-            active_ids = [n[0] for n in newsletters if n[1] == 1]
-            paused_ids = [n[0] for n in newsletters if n[1] == 0]
+            active_ids = [n['id'] for n in newsletters if n['is_active'] == 1]
+            paused_ids = [n['id'] for n in newsletters if n['is_active'] == 0]
 
-            # Enforce active limit
             if limits['max_active'] is not None and len(active_ids) > limits['max_active']:
                 ids_to_pause = active_ids[limits['max_active']:]
                 cursor.executemany("""
                     UPDATE newsletters 
                     SET is_active = 0 
-                    WHERE id = ? AND user_id = ?
+                    WHERE id = %s AND user_id = %s
                 """, [(nid, user_id) for nid in ids_to_pause])
                 print(f"⏸️ Paused {len(ids_to_pause)} active newsletters due to downgrade.")
 
-                # 🔁 Recalculate paused and active after pausing
-                cursor.execute("""
-                    SELECT id, is_active 
-                    FROM newsletters 
-                    WHERE user_id = ? 
-                    ORDER BY next_send_time ASC
-                """, (user_id,))
-                newsletters = cursor.fetchall()
-                active_ids = [n[0] for n in newsletters if n[1] == 1]
-                paused_ids = [n[0] for n in newsletters if n[1] == 0]
+            cursor.execute("""
+                SELECT id, is_active 
+                FROM newsletters 
+                WHERE user_id = %s 
+                ORDER BY next_send_time ASC
+            """, (user_id,))
+            newsletters = cursor.fetchall()
+            active_ids = [n['id'] for n in newsletters if n['is_active'] == 1]
+            paused_ids = [n['id'] for n in newsletters if n['is_active'] == 0]
 
-            # Enforce total limit
             total_count = len(active_ids) + len(paused_ids)
             if limits['max_total'] is not None and total_count > limits['max_total']:
                 excess = total_count - limits['max_total']
-                ids_to_delete = paused_ids[:excess]  # Only delete paused ones
+                ids_to_delete = paused_ids[:excess]
                 cursor.executemany("""
                     DELETE FROM newsletters 
-                    WHERE id = ? AND user_id = ?
+                    WHERE id = %s AND user_id = %s
                 """, [(nid, user_id) for nid in ids_to_delete])
                 cursor.executemany("""
                     DELETE FROM emails 
-                    WHERE plan_id = ?
+                    WHERE plan_id = %s
                 """, [(nid,) for nid in ids_to_delete])
                 print(f"🗑️ Deleted {len(ids_to_delete)} paused newsletters due to total limit.")
 
             conn.commit()
-            conn.close()
-
-
             print(f"✅ Downgraded user {user_id} to {new_plan} after subscription end.")
             print(f"📅 Downgrade applied from webhook on {subscription_end_date}")
+
+        cursor.close()
+        conn.close()
 
     except Exception as e:
         print("❌ Webhook handler error:", e)
@@ -1302,21 +1221,23 @@ def stripe_webhook():
     return '', 200
 
 #-------------- Reviews ------------------
+from flask import request, render_template, redirect
+import psycopg2
+import psycopg2.extras
+import os
+
+DATABASE_URL = os.getenv('DATABASE_URL')
+
 @app.route('/reviews')
 def reviews():
-    conn = sqlite3.connect('newsletter.db')
-    conn.row_factory = sqlite3.Row  # allows dict-style access
-    cursor = conn.cursor()
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     cursor.execute('SELECT * FROM reviews ORDER BY id DESC')
     reviews = cursor.fetchall()
 
     conn.close()
     return render_template('reviews.html', reviews=reviews)
-
-
-from flask import request, render_template, redirect
-import sqlite3
 
 @app.route('/reviews/new')
 def new_review():
@@ -1331,10 +1252,10 @@ def submit_review():
     if not name or not stars:
         return "Missing name or star rating", 400
 
-    conn = sqlite3.connect('newsletter.db')
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     cursor.execute(
-        'INSERT INTO reviews (name, stars, comment) VALUES (?, ?, ?)',
+        'INSERT INTO reviews (name, stars, comment) VALUES (%s, %s, %s)',
         (name, int(stars), comment)
     )
     conn.commit()

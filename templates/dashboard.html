@@ -71,25 +71,26 @@
             <div><span class="font-medium text-gray-500">Frequency:</span> {{ n['frequency'] }}</div>
             <div>
               <span class="font-medium text-gray-500">Next:</span>
-                            <span
+              <span
                 class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded"
-                data-utc="{{ n['next_send_time'] }}"
+                data-utc="{{ n.next_send_time.isoformat() }}"
               >
                 Loading local time...
               </span>
             </div>
+            <div class="col-span-2">
+              <!-- Reschedule Button -->
+              <button
+                onclick="openReschedule({ id: {{ n['id'] }}, date: '{{ n['next_send_time'].strftime("%Y-%m-%dT%H:%M") }}' })"
+                class="btn-outline w-full flex justify-center items-center gap-2 text-sm mt-2"
+              >
+                🕒 Reschedule
+              </button>
+            </div>
           </div>
-          <button @click="openReschedule({ id: {{ n['id'] }}, date: '{{ n['next_send_time'][:16]|replace(' ', 'T') }}' })"
-            class="btn-outline w-full flex justify-center items-center gap-2 text-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3M16 7V3M3 11h18M5 19h14a2 2 0 002-2v-7H3v7a2 2 0 002 2z" />
-            </svg>
-            Reschedule
-          </button>
-
           <form action="/toggle-newsletter-status" method="POST">
             <input type="hidden" name="newsletter_id" value="{{ n['id'] }}">
-            <button type="submit" class="btn-outline w-full text-yellow-700 border-yellow-400 hover:bg-yellow-50 text-sm flex items-center justify-center gap-2">
+            <button type="submit" class="btn-outline w-full text-yellow-700 border-yellow-400 hover:bg-yellow-50 text-sm flex items-center justify-center gap-2 mt-2">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
               </svg>
@@ -104,27 +105,41 @@
   {% endif %}
 </div>
 
-  <!-- Global Reschedule Modal -->
-  <div 
-    x-show="showModal"
-    x-transition
-    class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-    @keydown.escape.window="closeModal"
-    @click.self="closeModal"
-  >
-    <div class="bg-white w-full max-w-md rounded-xl shadow-xl p-6 space-y-4" @click.stop>
-      <h3 class="text-lg font-semibold text-gray-800 mb-2">Reschedule Newsletter</h3>
-      <form action="/update-send-time" method="POST" class="space-y-4">
-        <input type="hidden" name="plan_id" :value="modalData.id">
-        <input type="hidden" name="new_send_time" :value="modalData.date">
-        <div x-ref="calendar" class="flatpickr-container w-full rounded border border-gray-300"></div>
-        <div class="flex gap-3">
-          <button type="submit" class="btn-primary flex-1 text-sm">✅ Confirm</button>
-          <button type="button" @click="closeModal" class="btn-outline flex-1 text-sm">Cancel</button>
-        </div>
-      </form>
-    </div>
+<!-- Global Reschedule Modal -->
+<div 
+  class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+  style="display: none;" 
+  id="reschedule-modal"
+>
+  <div class="bg-white w-full max-w-md rounded-xl shadow-xl p-6 space-y-4">
+    <h3 class="text-lg font-semibold text-gray-800 mb-2">Reschedule Newsletter</h3>
+    <form action="/update-send-time" method="POST" class="space-y-4">
+      <input type="hidden" name="plan_id" id="modal-plan-id">
+      <div>
+        <label for="modal-new-send-time" class="block text-sm font-medium text-gray-700 mb-1">New Send Time</label>
+        <input type="datetime-local" name="new_send_time" id="modal-new-send-time" min="{{ min_datetime }}" required
+          class="w-full rounded border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div class="flex gap-3">
+        <button type="submit" class="btn-primary flex-1 text-sm">✅ Confirm</button>
+        <button type="button" onclick="closeModal()" class="btn-outline flex-1 text-sm">Cancel</button>
+      </div>
+    </form>
   </div>
+</div>
+
+<script>
+  function openReschedule(data) {
+    document.getElementById('modal-plan-id').value = data.id;
+    document.getElementById('modal-new-send-time').value = data.date.slice(0, 16);
+    document.getElementById('reschedule-modal').style.display = 'flex';
+  }
+
+  function closeModal() {
+    document.getElementById('reschedule-modal').style.display = 'none';
+  }
+</script>
+
 
 <!-- Paused Newsletters -->
 <div class="mb-12">
@@ -231,6 +246,7 @@
     }
   }
 </script>
+
 
 <!-- ⚠️ Downgrade Warning (Destructive Consequences) -->
 {% if subscription_days_left and downgrade_to %}

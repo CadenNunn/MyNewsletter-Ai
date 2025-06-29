@@ -1,4 +1,7 @@
-import sqlite3
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, select, func, and_
+from models import Email, Newsletter, PastNewsletter, User
+from db import SessionLocal  # SQLAlchemy session
 import json
 from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -11,6 +14,7 @@ import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 import time  # ✅ Added for delay before deletion request
 from dateutil.relativedelta import relativedelta  # ✅ Needed for monthly scheduling
+
 
 # Load environment variables
 load_dotenv()
@@ -53,157 +57,128 @@ def send_email(to_email, subject, html_content):
         print(f"❌ Brevo API Exception while sending to {to_email}: {e}")
 
 def get_recent_newsletters(user_id, limit=5):
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
-    c = conn.cursor()
-    c.execute("""
-        SELECT content FROM past_newsletters
-        WHERE plan_id IN (
-            SELECT id FROM newsletters WHERE user_id = ?
+    db = SessionLocal()
+    try:
+        # Get plan IDs for the user
+        plan_ids = db.query(Newsletter.id).filter(Newsletter.user_id == user_id).subquery()
+
+        # Fetch recent past newsletters
+        rows = (
+            db.query(PastNewsletter.content)
+            .filter(PastNewsletter.plan_id.in_(plan_ids))
+            .order_by(PastNewsletter.created_at.desc())
+            .limit(limit)
+            .all()
         )
-        ORDER BY created_at DESC
-        LIMIT ?
-    """, (user_id, limit))
-    rows = c.fetchall()
-    conn.close()
-    return "\n\n---\n\n".join([r[0] for r in rows])
+
+        return "\n\n---\n\n".join([r[0] for r in rows])
+    finally:
+        db.close()
+
 
 def check_and_send():
     now = datetime.now(timezone.utc)
-    conn = sqlite3.connect('/mnt/data/newsletter.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
+    db = SessionLocal()
 
-    # 🔍 TEMP DEBUGGING
-    c.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    tables = c.fetchall()
-    print("🧠 Tables in DB:", tables)
+    try:
+        # Fetch due emails
+        due_emails = (
+            db.query(Email)
+            .filter(Email.sent == False, Email.send_date <= now)
+            .all()
+        )
 
-    c.execute("""
-        SELECT * FROM emails
-        WHERE sent = 0 AND send_date <= ?
-    """, (now.isoformat(),))
-    due_emails = c.fetchall()
+        print(f"⏱ Checked at {now.isoformat()} — {len(due_emails)} emails due")
 
-    print(f"⏱ Checked at {now.isoformat()} — {len(due_emails)} emails due")
+        for email in due_emails:
+            plan = db.query(Newsletter).filter(Newsletter.id == email.plan_id).first()
+            if not plan:
+                print(f"❌ Plan with plan_id {email.plan_id} not found.")
+                continue
 
-    for email_row in due_emails:
-        plan_id = email_row['plan_id']
-        position = email_row['position_in_plan']
-        title = email_row['title']
+            user = db.query(User).filter(User.id == plan.user_id).first()
+            if not user:
+                print(f"⚠️ No user found with ID {plan.user_id}")
+                continue
 
-        c.execute("SELECT * FROM newsletters WHERE id = ?", (plan_id,))
-        plan = c.fetchone()
-        if not plan:
-            print(f"❌ Plan with plan_id {plan_id} not found.")
-            continue
+            past_content = get_recent_newsletters(plan.user_id)
 
-        user_id = plan['user_id']
-        topic = plan['topic']
-        demographic = plan['demographic']
-        tone = plan['tone']
-        plan_title = plan['plan_title']
-        section_titles = json.loads(plan['section_titles'])
-        summary = plan['summary'] if 'summary' in plan.keys() else ''
-
-        past_content = get_recent_newsletters(user_id)
-
-        try:
-            html = write_full_newsletter(
-                topic=topic,
-                demographic=demographic,
-                tone=tone,
-                title=title,
-                plan_title=plan_title,
-                section_title=section_titles[position - 1],
-                position_in_plan=position,
-                past_content=past_content
-            )
-        except Exception as e:
-            print(f"❌ GPT generation failed for email {email_row['email_id']}: {e}")
-            continue
-
-        c.execute("SELECT email FROM users WHERE id = ?", (user_id,))
-        user = c.fetchone()
-        if user:
-            send_email(user['email'], title, html)
-        else:
-            print(f"⚠️ No user found with ID {user_id}")
-
-        c.execute("""
-            UPDATE emails
-            SET html_content = ?, sent = 1
-            WHERE email_id = ?
-        """, (html, email_row['email_id']))
-
-        c.execute("""
-            INSERT INTO past_newsletters (plan_id, content, created_at)
-            VALUES (?, ?, ?)
-        """, (plan_id, html, now.isoformat()))
-
-        print(f"✅ Logged + Sent: {title}")
-
-        conn.commit()
-
-        # ⏭️ Update next_send_time based on frequency
-        frequency = plan['frequency']
-        if frequency == 'daily':
-            next_time = now + timedelta(days=1)
-        elif frequency == 'weekly':
-            next_time = now + timedelta(weeks=1)
-        elif frequency == 'biweekly':
-            next_time = now + timedelta(weeks=2)
-        elif frequency == 'monthly':
-            next_time = now + relativedelta(months=1)
-        else:
-            next_time = now + timedelta(days=7)
-
-        c.execute("""
-            UPDATE newsletters SET next_send_time = ? WHERE id = ?
-        """, (next_time.isoformat(), plan_id))
-        conn.commit()
-
-        # ✅ Check if this plan is complete
-        c.execute("""
-            SELECT COUNT(*) FROM emails 
-            WHERE plan_id = ? AND user_id = ?
-        """, (plan_id, user_id))
-        total = c.fetchone()[0]
-
-        c.execute("""
-            SELECT COUNT(*) FROM emails 
-            WHERE plan_id = ? AND user_id = ? AND sent = 1
-        """, (plan_id, user_id))
-        sent = c.fetchone()[0]
-
-        print(f"🔍 Debug — Plan {plan_id}: total={total}, sent={sent}")
-        plan_complete = (sent == total)
-        print(f"✅ Plan complete? {plan_complete}")
-
-        if plan_complete:
             try:
-                for i in range(5):
-                    verify_conn = sqlite3.connect('/mnt/data/newsletter.db')
-                    verify_cursor = verify_conn.cursor()
-                    verify_cursor.execute("SELECT COUNT(*) FROM emails WHERE plan_id = ? AND sent = 1", (plan_id,))
-                    verified_sent = verify_cursor.fetchone()[0]
-                    verify_conn.close()
+                html = write_full_newsletter(
+                    topic=plan.topic,
+                    demographic=plan.demographic,
+                    tone=plan.tone,
+                    title=email.title,
+                    plan_title=plan.plan_title,
+                    section_title=json.loads(plan.section_titles)[email.position_in_plan - 1],
+                    position_in_plan=email.position_in_plan,
+                    past_content=past_content
+                )
+            except Exception as e:
+                print(f"❌ GPT generation failed for email {email.id}: {e}")
+                continue
 
+            # Send the email
+            send_email(user.email, email.title, html)
+
+            # Update email row
+            email.html_content = html
+            email.sent = True
+
+            # Log past newsletter
+            past = PastNewsletter(
+                plan_id=email.plan_id,
+                content=html,
+                created_at=now
+            )
+            db.add(past)
+
+            # Update next send time
+            freq = plan.frequency.lower()
+            if freq == 'daily':
+                plan.next_send_time = now + timedelta(days=1)
+            elif freq == 'weekly':
+                plan.next_send_time = now + timedelta(weeks=1)
+            elif freq == 'biweekly':
+                plan.next_send_time = now + timedelta(weeks=2)
+            elif freq == 'monthly':
+                plan.next_send_time = now + relativedelta(months=1)
+            else:
+                plan.next_send_time = now + timedelta(days=7)
+
+            db.commit()
+            print(f"✅ Logged + Sent: {email.title}")
+
+            # Check if plan is complete
+            total = db.query(Email).filter_by(plan_id=plan.id, user_id=plan.user_id).count()
+            sent = db.query(Email).filter_by(plan_id=plan.id, user_id=plan.user_id, sent=True).count()
+
+            print(f"🔍 Debug — Plan {plan.id}: total={total}, sent={sent}")
+            if total == sent:
+                print(f"✅ Plan complete? True")
+
+                # Verify with retries
+                for i in range(5):
+                    verified_sent = db.query(Email).filter_by(plan_id=plan.id, sent=True).count()
                     print(f"🔄 Retry check ({i+1}/5): sent={verified_sent} (expected {total})")
                     if verified_sent == total:
                         break
                     time.sleep(0.5)
 
-                print(f"🔁 Sending POST to /check-and-delete-plan for plan_id={plan_id}")
-                response = requests.post(
-                    "http://localhost:5000/check-and-delete-plan",
-                    data={"plan_id": plan_id}
-                )
-                print(f"🧹 Cleanup status: {response.status_code}")
-                print(f"🧹 Cleanup response: {response.text}")
-            except Exception as e:
-                print(f"❌ Failed to delete plan {plan_id}: {e}")
+                # Trigger deletion
+                try:
+                    print(f"🔁 Sending POST to /check-and-delete-plan for plan_id={plan.id}")
+                    response = requests.post(
+                        "http://localhost:5000/check-and-delete-plan",
+                        data={"plan_id": plan.id}
+                    )
+                    print(f"🧹 Cleanup status: {response.status_code}")
+                    print(f"🧹 Cleanup response: {response.text}")
+                except Exception as e:
+                    print(f"❌ Failed to delete plan {plan.id}: {e}")
 
-    conn.close()  # ✅ Now correctly placed outside the loop
+    finally:
+        db.close()
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_and_send, 'interval', minutes=1)
