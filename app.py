@@ -10,6 +10,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta, timezone
 from gpt_planner import create_email_plan
 import json
+from adminer import adminer
+app.register_blueprint(adminer)
+
 
 
 
@@ -55,6 +58,15 @@ def get_user_email(user_id):
     row = cursor.fetchone()
     conn.close()
     return row[0] if row else None
+
+
+
+
+from flask import send_from_directory
+
+@app.route('/adminer')
+def serve_adminer():
+    return send_from_directory('.', 'adminer.html')
 
 
 #---------- Scheduler auto delete ------------
