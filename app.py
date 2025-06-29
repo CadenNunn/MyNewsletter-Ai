@@ -188,7 +188,19 @@ def inject_subscription_context():
 # ---------------- Home ----------------
 @app.route('/')
 def home():
-    return render_template('index.html')
+    import sqlite3
+    conn = sqlite3.connect('newsletter.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT name, stars, comment FROM reviews ORDER BY id DESC LIMIT 10')
+    rows = cursor.fetchall()
+    conn.close()
+
+    reviews = [dict(row) for row in rows]
+    return render_template('index.html', reviews=reviews)
+
+
 
 
 # ---------- Date Formating ------------
@@ -1278,6 +1290,48 @@ def stripe_webhook():
         print("❌ Webhook handler error:", e)
 
     return '', 200
+
+#-------------- Reviews ------------------
+@app.route('/reviews')
+def reviews():
+    conn = sqlite3.connect('newsletter.db')
+    conn.row_factory = sqlite3.Row  # allows dict-style access
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM reviews ORDER BY id DESC')
+    reviews = cursor.fetchall()
+
+    conn.close()
+    return render_template('reviews.html', reviews=reviews)
+
+
+from flask import request, render_template, redirect
+import sqlite3
+
+@app.route('/reviews/new')
+def new_review():
+    return render_template('leave_review.html')
+
+@app.route('/reviews/new', methods=['POST'])
+def submit_review():
+    name = request.form.get('name')
+    stars = request.form.get('stars')
+    comment = request.form.get('comment', '')
+
+    if not name or not stars:
+        return "Missing name or star rating", 400
+
+    conn = sqlite3.connect('newsletter.db')
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO reviews (name, stars, comment) VALUES (?, ?, ?)',
+        (name, int(stars), comment)
+    )
+    conn.commit()
+    conn.close()
+
+    return redirect('/reviews')
+
 
 # ---------------- Run App ----------------
 

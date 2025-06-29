@@ -233,27 +233,85 @@
   }
 </script>
 
-<!-- SVG Divider -->
-<div class="relative">
-  <svg class="absolute top-0 left-0 w-full h-16 text-white" preserveAspectRatio="none" viewBox="0 0 1440 100">
-    <path fill="currentColor" d="M0,32L1440,96L1440,0L0,0Z"></path>
-  </svg>
-</div>
 
-<section class="py-20 px-4 text-center bg-gradient-to-b from-white to-gray-50 relative z-10">
-  <h2 class="heading-1 text-3xl sm:text-4xl mb-4" data-aos="fade-up">
-    Your AI Newsletter is Waiting
-  </h2>
-  <p class="subheading text-lg mb-6" data-aos="fade-up" data-aos-delay="100">
-    Takes 30 seconds to set up. No credit card required.
-  </p>
-  <a href="/build-newsletter" class="btn-primary text-lg" data-aos="fade-up" data-aos-delay="200">
-    Get Started Free →
-  </a>
-  <p class="text-sm text-gray-500 mt-4" data-aos="fade-up" data-aos-delay="300">
-    No spam. Cancel anytime.
-  </p>
+<!-- Finalized Review Carousel -->
+<section class="bg-white py-24 px-6">
+  <div class="max-w-4xl mx-auto text-center">
+    <h2 class="text-4xl font-bold text-gray-900 mb-14" data-aos="fade-up">
+      What Our Users Are Saying
+    </h2>
+
+    <div 
+      x-data='{
+        index: 0,
+        reviews: {{ reviews|tojson|safe }},
+        interval: null,
+        startAuto() {
+          this.interval = setInterval(() => {
+            this.index = (this.index + 1) % this.reviews.length;
+          }, 7000);
+        },
+        stopAuto() {
+          clearInterval(this.interval);
+        }
+      }'
+      x-init="startAuto()"
+      @mouseenter="stopAuto()" 
+      @mouseleave="startAuto()"
+      class="relative max-w-3xl mx-auto"
+    >
+
+      <!-- Review Card -->
+      <template x-if="reviews.length > 0">
+        <div 
+          class="transition duration-500 ease-in-out bg-white p-8 rounded-xl border border-gray-200 min-h-[220px] flex flex-col justify-between shadow-sm"
+          x-transition:enter="transition ease-out duration-300"
+          x-transition:enter-start="opacity-0 translate-y-4"
+          x-transition:enter-end="opacity-100 translate-y-0"
+          x-transition:leave="transition ease-in duration-200"
+          x-transition:leave-start="opacity-100 translate-y-0"
+          x-transition:leave-end="opacity-0 translate-y-4"
+        >
+          <p class="text-lg text-gray-800 leading-relaxed mb-8 text-center" x-text="reviews[index].comment || 'No comment, but they liked it!'"></p>
+
+          <div class="text-center">
+            <p class="text-base font-semibold text-gray-900" x-text="reviews[index].name"></p>
+            <p class="text-yellow-500 text-lg mt-1" x-text="'★'.repeat(reviews[index].stars) + '☆'.repeat(5 - reviews[index].stars)"></p>
+          </div>
+        </div>
+      </template>
+
+      <!-- "X of Y" Nav -->
+      <div class="flex items-center justify-between mt-8">
+        <button 
+          class="text-sm text-gray-600 hover:text-blue-600 transition font-medium"
+          @click="index = (index - 1 + reviews.length) % reviews.length"
+          x-show="reviews.length > 1"
+        >Previous</button>
+
+        <div class="text-sm text-gray-500">
+          <span x-text="index + 1"></span>
+          <span class="mx-1">of</span>
+          <span x-text="reviews.length"></span>
+        </div>
+
+        <button 
+          class="text-sm text-gray-600 hover:text-blue-600 transition font-medium"
+          @click="index = (index + 1) % reviews.length"
+          x-show="reviews.length > 1"
+        >Next</button>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="mt-14">
+      <a href="/reviews/new" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition text-base font-semibold shadow">
+        Leave a Review
+      </a>
+    </div>
+  </div>
 </section>
+
 
 
 {% endblock %}

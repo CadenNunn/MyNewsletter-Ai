@@ -47,6 +47,7 @@
     <!-- Desktop Nav -->
     <div class="hidden md:flex items-center gap-6 ml-auto">
       <a href="/pricing" class="text-base text-gray-700 hover:text-blue-700 transition">Pricing</a>
+      <a href="/reviews" class="text-base text-gray-700 hover:text-blue-700 transition">Reviews</a>
 
       {% if session['user_id'] %}
         <!-- Avatar Dropdown -->
@@ -98,6 +99,7 @@
     x-transition:leave-end="opacity-0 transform scale-y-90"
   >
     <a href="/pricing" class="block text-gray-700 hover:text-blue-700 text-base">Pricing</a>
+    <a href="/reviews" class="block text-gray-700 hover:text-blue-700 text-base">Reviews</a>
 
     {% if session['user_id'] %}
       <a href="/dashboard" class="block text-gray-700 hover:text-blue-700 text-base">Dashboard</a>
