@@ -264,7 +264,7 @@
       <!-- Review Card -->
       <template x-if="reviews.length > 0">
         <div 
-          class="transition duration-500 ease-in-out bg-white p-8 rounded-xl border border-gray-200 min-h-[220px] flex flex-col justify-between shadow-sm"
+          class="transition duration-500 ease-in-out bg-white p-8 rounded-2xl border border-gray-200 min-h-[220px] flex flex-col justify-between shadow hover:shadow-md"
           x-transition:enter="transition ease-out duration-300"
           x-transition:enter-start="opacity-0 translate-y-4"
           x-transition:enter-end="opacity-100 translate-y-0"
@@ -281,36 +281,35 @@
         </div>
       </template>
 
-      <!-- "X of Y" Nav -->
-      <div class="flex items-center justify-between mt-8">
-        <button 
-          class="text-sm text-gray-600 hover:text-blue-600 transition font-medium"
-          @click="index = (index - 1 + reviews.length) % reviews.length"
-          x-show="reviews.length > 1"
-        >Previous</button>
+      <!-- Modernized Nav Centered -->
+      <div class="mt-10">
+        <div class="flex items-center justify-center gap-12">
+          <button 
+            class="text-sm text-gray-600 hover:text-blue-600 transition font-medium"
+            @click="index = (index - 1 + reviews.length) % reviews.length"
+            x-show="reviews.length > 1"
+          >
+            ← Previous
+          </button>
 
-        <div class="text-sm text-gray-500">
-          <span x-text="index + 1"></span>
-          <span class="mx-1">of</span>
-          <span x-text="reviews.length"></span>
+          <div class="text-sm text-gray-500 font-medium">
+            <span x-text="index + 1"></span>
+            <span class="mx-1">of</span>
+            <span x-text="reviews.length"></span>
+          </div>
+
+          <button 
+            class="text-sm text-gray-600 hover:text-blue-600 transition font-medium"
+            @click="index = (index + 1) % reviews.length"
+            x-show="reviews.length > 1"
+          >
+            Next →
+          </button>
         </div>
-
-        <button 
-          class="text-sm text-gray-600 hover:text-blue-600 transition font-medium"
-          @click="index = (index + 1) % reviews.length"
-          x-show="reviews.length > 1"
-        >Next</button>
       </div>
     </div>
 
-    <!-- CTA -->
-    <div class="mt-14">
-      <a href="/reviews/new" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition text-base font-semibold shadow">
-        Leave a Review
-      </a>
-    </div>
-  </div>
-</section>
+
 
 
 

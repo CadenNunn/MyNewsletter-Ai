@@ -87,8 +87,23 @@
 
   window.onload = () => {
     showStep(0);
-  }
+  };
+
+  // Intercept Enter key to trigger nextStep instead of form submission
+  document.addEventListener("keydown", function (event) {
+    const activeElement = document.activeElement;
+    const form = document.querySelector("form");
+
+    const isInputField = activeElement.tagName === "INPUT" || activeElement.tagName === "SELECT";
+    const isLastStep = currentStep === steps.length - 1;
+
+    if (event.key === "Enter" && isInputField && !isLastStep) {
+      event.preventDefault();
+      nextStep();
+    }
+  });
 </script>
+
 
 <!-- 🧭 Page Layout + Theme -->
 <div class="min-h-screen flex items-center justify-center px-4">

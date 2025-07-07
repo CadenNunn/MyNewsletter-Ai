@@ -4,10 +4,22 @@
 <div class="max-w-2xl mx-auto p-6">
   <h1 class="text-4xl font-bold text-center text-gray-900 mb-10">Leave a Review</h1>
   
-  <form action="{{ url_for('submit_review') }}" method="POST" class="space-y-8">
+  <form 
+    action="{{ url_for('submit_review') }}" 
+    method="POST" 
+    class="space-y-8"
+    @submit.prevent="
+      if (rating < 1) {
+        alert('Please select a star rating before submitting.');
+      } else {
+        $el.submit();
+      }
+    "
+  >
+
     
     <!-- Star Rating -->
-    <div x-data="{ rating: 0, hover: 0 }" class="text-center">
+    <div x-data="{ rating: 0, hover: 0, error: false }" class="text-center" @submit.window="if (rating < 1) { error = true; $event.preventDefault(); }">
       <input type="hidden" name="stars" :value="rating" required>
 
       <label class="block text-sm font-medium text-gray-700 mb-2">Star Rating</label>
@@ -15,7 +27,7 @@
       <div class="flex justify-center space-x-1 text-2xl text-yellow-400 cursor-pointer">
         <template x-for="i in 5" :key="i">
           <svg 
-            @click="rating = i" 
+            @click="rating = i; error = false;" 
             @mouseover="hover = i" 
             @mouseleave="hover = 0"
             :class="[(hover >= i || (!hover && rating >= i)) ? 'text-yellow-400' : 'text-gray-300']"
@@ -30,6 +42,7 @@
       </div>
 
       <p class="text-sm text-gray-500 mt-2" x-show="rating">You selected <span x-text="rating"></span> star<span x-show="rating > 1">s</span>.</p>
+      <p class="text-sm text-red-500 mt-2" x-show="error" x-transition.opacity.duration.300ms>Please select a star rating.</p>
     </div>
 
     <!-- Name -->

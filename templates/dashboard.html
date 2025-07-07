@@ -73,7 +73,7 @@
               <span class="font-medium text-gray-500">Next:</span>
               <span
                 class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded"
-                data-utc="{{ n.next_send_time.isoformat() }}"
+                data-utc="{{ n.next_send_time.isoformat() }}Z"
               >
                 Loading local time...
               </span>
@@ -169,7 +169,7 @@
               <span class="font-medium text-gray-500">Next:</span>
                             <span
                 class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded"
-                data-utc="{{ n['next_send_time'] }}"
+                data-utc="{{ n['next_send_time'] }}Z"
               >
                 Loading local time...
               </span>
@@ -272,7 +272,17 @@
 <script>
   document.querySelectorAll('[data-utc]').forEach(el => {
     const utcStr = el.getAttribute('data-utc');
+    if (!utcStr || utcStr === "nullZ" || utcStr === "undefinedZ") {
+      el.textContent = "Paused";
+      return;
+    }
+
     const date = new Date(utcStr);
+    if (isNaN(date.getTime())) {
+      el.textContent = "Paused";
+      return;
+    }
+
     const local = date.toLocaleString(undefined, {
       year: 'numeric',
       month: 'short',
@@ -284,6 +294,7 @@
     el.textContent = local;
   });
 </script>
+
 
 
 {% endblock %}

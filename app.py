@@ -424,6 +424,7 @@ def confirm_newsletter():
     return render_template("success.html", next_send=first_send.isoformat())
 
 # ---------------- User Registration ----------------
+from sqlalchemy.exc import IntegrityError
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -736,27 +737,39 @@ def toggle_newsletter_status():
         interval_days = freq_map.get(frequency, 7)
 
         if current_status == True:
-            # PAUSING: is_active = False, clear future unsent emails
+            # PAUSING: is_active = False, clear future unsent emails and next_send_time
             newsletter.is_active = False
+            newsletter.next_send_time = None
+
             db.query(Email).filter(
                 Email.plan_id == newsletter_id,
                 Email.user_id == user_id,
                 Email.sent == False
             ).update({Email.send_date: None})
         else:
-            # RESUMING: is_active = True, set next_send_time
+            # RESUMING
             newsletter.is_active = True
-            newsletter.next_send_time = now
 
-            unsent_emails = db.query(Email).filter(
+            # Only reassign if all send dates were cleared
+            first_unsent = db.query(Email).filter(
                 Email.plan_id == newsletter_id,
                 Email.user_id == user_id,
                 Email.sent == False
-            ).order_by(Email.position_in_plan.asc()).all()
+            ).order_by(Email.position_in_plan.asc()).first()
 
-            for i, email in enumerate(unsent_emails):
-                new_send = now + timedelta(days=interval_days * i)
-                email.send_date = new_send
+            if not first_unsent or first_unsent.send_date is None:
+                # Apply a 1-day grace buffer before resuming
+                resume_anchor = now + timedelta(days=1)
+                newsletter.next_send_time = resume_anchor
+
+                unsent_emails = db.query(Email).filter(
+                    Email.plan_id == newsletter_id,
+                    Email.user_id == user_id,
+                    Email.sent == False
+                ).order_by(Email.position_in_plan.asc()).all()
+
+                for i, email in enumerate(unsent_emails):
+                    email.send_date = resume_anchor + timedelta(days=interval_days * i)
 
         db.commit()
         flash("Newsletter status updated.")
@@ -936,41 +949,45 @@ def terms_and_conditions():
 #------------ Pricing --------------------
 @app.route("/pricing")
 def pricing():
-    if 'user_id' not in session:
-        flash("Please log in to view pricing.")
-        return redirect(url_for('login'))
+    current_plan = 'free'
+    downgrade_to = None
+    subscription_days_left = None
+    current_plan_rank = 0
 
-    user_id = session['user_id']
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
+    if 'user_id' in session:
+        user_id = session['user_id']
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
 
-        current_plan = user.plan if user else 'free'
-        downgrade_to = user.downgrade_to if user else None
-        subscription_end_date = user.subscription_end_date if user else None
+            if user:
+                current_plan = user.plan or 'free'
+                downgrade_to = user.downgrade_to
+                subscription_end_date = user.subscription_end_date
 
-        # Calculate days left until downgrade
-        subscription_days_left = None
-        if subscription_end_date:
-            try:
-                dt = datetime.fromisoformat(subscription_end_date)
-                delta = (dt - datetime.utcnow()).total_seconds() / 86400
-                subscription_days_left = max(ceil(delta), 0)
-            except Exception as e:
-                print("⚠️ Error parsing subscription_end_date:", e)
+                # Calculate days left until downgrade
+                if subscription_end_date:
+                    try:
+                        dt = datetime.fromisoformat(subscription_end_date)
+                        delta = (dt - datetime.utcnow()).total_seconds() / 86400
+                        subscription_days_left = max(ceil(delta), 0)
+                    except Exception as e:
+                        print("⚠️ Error parsing subscription_end_date:", e)
 
-        plan_order = {'free': 0, 'plus': 1, 'pro': 2}
-        current_plan_rank = plan_order.get(current_plan, 0)
+            plan_order = {'free': 0, 'plus': 1, 'pro': 2}
+            current_plan_rank = plan_order.get(current_plan, 0)
 
-        return render_template(
-            "pricing.html",
-            current_plan=current_plan,
-            current_plan_rank=current_plan_rank,
-            downgrade_to=downgrade_to,
-            subscription_days_left=subscription_days_left
-        )
-    finally:
-        db.close()
+        finally:
+            db.close()
+
+    return render_template(
+        "pricing.html",
+        current_plan=current_plan,
+        current_plan_rank=current_plan_rank,
+        downgrade_to=downgrade_to,
+        subscription_days_left=subscription_days_left
+    )
+
 
 #-------------- Checkout ----------------
 @app.route('/create-checkout-session/<plan>')
