@@ -55,14 +55,14 @@
 
         <!-- Frequency -->
         <div class="bg-gray-50 border rounded-lg p-4">
-          <label class="subheading block mb-2 text-sm font-medium text-gray-700" for="frequency">Send Frequency</label>
-          <select name="frequency" id="frequency" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
-            <option value="daily" {% if plan.frequency == 'daily' %}selected{% endif %}>Daily</option>
-            <option value="weekly" {% if plan.frequency == 'weekly' %}selected{% endif %}>Weekly</option>
-            <option value="biweekly" {% if plan.frequency == 'biweekly' %}selected{% endif %}>Biweekly</option>
-            <option value="monthly" {% if plan.frequency == 'monthly' %}selected{% endif %}>Monthly</option>
-          </select>
+                <label class="subheading block mb-2 text-sm font-medium text-gray-700" for="frequency">Send Frequency</label>
+                <select name="frequency" id="frequency" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                        <option value="daily" {% if plan.frequency == 'daily' %}selected{% endif %}>Daily</option>
+                        <option value="bidaily" {% if plan.frequency == 'bidaily' %}selected{% endif %}>Every 2 Days</option>
+                        <option value="weekly" {% if plan.frequency == 'weekly' %}selected{% endif %}>Weekly</option>
+                </select>
         </div>
+
 
         <!-- Send Time -->
         <div class="bg-gray-50 border rounded-lg p-4">

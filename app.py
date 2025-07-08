@@ -362,7 +362,7 @@ def confirm_newsletter():
             print("❌ Error parsing custom time, defaulting to now:", e)
             first_send = now
 
-    freq_map = {'daily': 1, 'weekly': 7, 'biweekly': 14, 'monthly': 30}
+    freq_map = {'daily': 1, 'bidaily': 2, 'weekly': 7}
     interval_days = freq_map.get(frequency.lower(), 7)
 
     db = SessionLocal()
@@ -623,9 +623,9 @@ def update_send_time():
 
         frequency = newsletter.frequency.lower()
         delta = {
+            "daily": timedelta(days=1),
+            "bidaily": timedelta(days=2),
             "weekly": timedelta(weeks=1),
-            "biweekly": timedelta(weeks=2),
-            "monthly": timedelta(weeks=4)
         }.get(frequency, timedelta(weeks=1))
 
         # Update newsletter next_send_time
@@ -732,7 +732,7 @@ def toggle_newsletter_status():
                 return redirect(url_for('dashboard'))
 
         now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        freq_map = {'daily': 1, 'weekly': 7, 'biweekly': 14, 'monthly': 30}
+        freq_map = {'daily': 1, 'bidaily': 2, 'weekly': 7}
         frequency = (newsletter.frequency or "weekly").lower()
         interval_days = freq_map.get(frequency, 7)
 

@@ -138,12 +138,10 @@ def check_and_send():
             freq = plan.frequency.lower()
             if freq == 'daily':
                 plan.next_send_time = now + timedelta(days=1)
+            elif freq == 'bidaily':
+                plan.next_send_time = now + timedelta(days=2)
             elif freq == 'weekly':
                 plan.next_send_time = now + timedelta(weeks=1)
-            elif freq == 'biweekly':
-                plan.next_send_time = now + timedelta(weeks=2)
-            elif freq == 'monthly':
-                plan.next_send_time = now + relativedelta(months=1)
             else:
                 plan.next_send_time = now + timedelta(days=7)
 
