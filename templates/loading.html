@@ -2,14 +2,16 @@
 {% block title %}Generating Newsletter...{% endblock %}
 
 {% block content %}
-<div class="min-h-screen flex flex-col items-center justify-center px-4 text-center">
-  <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-6"></div>
+<div class="theme-general">
+  <div class="min-h-screen flex flex-col items-center justify-center px-4 text-center bg-[var(--color-bg)]">
+    <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-[var(--color-accent)] mb-6"></div>
 
-  <h1 class="heading-1 mb-4">Creating Your Newsletter...</h1>
-  <p class="text-gray-700 text-lg mb-2">Topic: <strong>{{ topic }}</strong></p>
-  <p class="text-gray-700 text-lg mb-2">Audience: <strong>{{ demographic }}</strong></p>
+    <h1 class="heading-1 mb-4">Creating Your Newsletter...</h1>
+    <p class="text-[var(--color-text)] text-lg mb-2">Topic: <strong>{{ topic }}</strong></p>
+    <p class="text-[var(--color-text)] text-lg mb-2">Audience: <strong>{{ demographic }}</strong></p>
 
-  <p class="text-gray-500 mt-4 text-sm italic" id="loading-message">Analyzing your topic...</p>
+    <p class="text-[var(--color-muted)] mt-4 text-sm italic" id="loading-message">Analyzing your topic...</p>
+  </div>
 </div>
 
 <script>
@@ -26,9 +28,9 @@
     i++;
   }, 2000);
 
-  // Auto-trigger GPT route after short delay
+  // Auto-redirect after delay
   setTimeout(() => {
     window.location.href = "/generate-newsletter";
-  }, 2000);  // can increase to 3000–5000ms if needed
+  }, 2000);
 </script>
 {% endblock %}

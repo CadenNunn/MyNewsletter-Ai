@@ -17,6 +17,15 @@ from models import Newsletter, Email
 from sqlalchemy import func
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy import asc, desc
+from models import SchoolNewsletter
+from planner_school import create_study_plan
+from utils.syllabus_parser import extract_topics_from_syllabus
+from flask_session import Session
+import redis
+
+
+
+
 
 
 
@@ -45,15 +54,29 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY")
 
+
+# Redis Session Configuration
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_REDIS'] = redis.from_url(os.getenv('REDIS_URL'))
+
+# Redis Session Configuration For local testing
+#app.config['SESSION_TYPE'] = 'redis'
+#app.config['SESSION_REDIS'] = redis.Redis(host='localhost', port=6379)
+
+# Initialize Flask-Session
+Session(app)
+
 from scheduler import scheduler
 scheduler.start()
 
 
 # Plan-based limits
 PLAN_FEATURES = {
-    'free': {'max_total': 1, 'max_active': 1},
-    'plus': {'max_total': None, 'max_active': 1},
-    'pro': {'max_total': None, 'max_active': None},
+    'free': {'max_total': 1},
+    'plus': {'max_total': 3},
+    'pro': {'max_total': None},
 }
 
 # Pricing Keys
@@ -209,7 +232,7 @@ def home():
             {"name": r.name, "stars": r.stars, "comment": r.comment}
             for r in reviews_query
         ]
-        return render_template('index.html', reviews=reviews)
+        return render_template('index.html', reviews=reviews, hide_header=True, hide_footer=True)
     finally:
         db.close()
 
@@ -229,6 +252,10 @@ def format_datetime(value):
         print(f"⚠️ Error formatting datetime: {value} → {e}")
         return value  # fallback
 
+#---------- Choose newsletter -------
+@app.route("/choose-newsletter-type")
+def choose_newsletter_type():
+    return render_template("choose_newsletter_type.html")
 
 
 # ------------- Builder ----------------
@@ -248,9 +275,12 @@ def build_newsletter():
             return redirect(url_for('dashboard'))
 
         plan = user.plan
-        limits = PLAN_FEATURES.get(plan, {'max_total': 1, 'max_active': 1})
+        limits = PLAN_FEATURES.get(plan, {'max_total': 1})
 
-        total_count = db.query(Newsletter).filter(Newsletter.user_id == user_id).count()
+        # Count TOTAL newsletters across both tables
+        general_count = db.query(Newsletter).filter(Newsletter.user_id == user_id).count()
+        school_count = db.query(SchoolNewsletter).filter(SchoolNewsletter.user_id == user_id).count()
+        total_count = general_count + school_count
 
         if limits['max_total'] is not None and total_count >= limits['max_total']:
             flash("You’ve reached your plan’s newsletter limit. Upgrade to create more.")
@@ -260,6 +290,7 @@ def build_newsletter():
 
     finally:
         db.close()
+
 
 @app.route('/generate-newsletter')
 def generate_newsletter():
@@ -367,23 +398,21 @@ def confirm_newsletter():
 
     db = SessionLocal()
 
-    # ✅ Plan-based activation decision
+    # ✅ Plan limit enforcement (using max_total only)
     user = db.query(User).filter(User.id == user_id).first()
     plan = user.plan.lower() if user and user.plan else 'free'
-    limits = PLAN_FEATURES.get(plan, {'max_active': 1})
+    limits = PLAN_FEATURES.get(plan, {'max_total': 1})
 
-    active_count = db.query(func.count()).select_from(Newsletter).filter(
-        Newsletter.user_id == user_id,
-        Newsletter.is_active == True
-    ).scalar()
+    general_count = db.query(Newsletter).filter(Newsletter.user_id == user_id).count()
+    school_count = db.query(SchoolNewsletter).filter(SchoolNewsletter.user_id == user_id).count()
+    total_count = general_count + school_count
 
-    is_active = 1 if limits['max_active'] is None or active_count < limits['max_active'] else 0
+    if limits['max_total'] is not None and total_count >= limits['max_total']:
+        db.close()
+        flash("You’ve reached your plan’s newsletter limit. Upgrade to create more.")
+        return redirect(url_for('dashboard'))
 
-    print("📊 Plan:", plan)
-    print("📊 Active Count:", active_count)
-    print("📌 Final is_active value:", is_active)
-
-    # ✅ Insert newsletter
+    # ✅ Insert newsletter (always active now)
     new_newsletter = Newsletter(
         user_id=user_id,
         email=email,
@@ -395,7 +424,7 @@ def confirm_newsletter():
         frequency=frequency,
         tone=tone,
         next_send_time=first_send,
-        is_active=is_active
+        is_active=1  # Always active
     )
     db.add(new_newsletter)
     db.commit()
@@ -403,7 +432,7 @@ def confirm_newsletter():
     new_newsletter.plan_id = new_newsletter.id
     db.commit()
 
-    print("🧾 Inserted Newsletter ID:", new_newsletter.id, "| is_active =", new_newsletter.is_active)
+    print("🧾 Inserted Newsletter ID:", new_newsletter.id)
 
     # ✅ Insert scheduled emails
     for i, title in enumerate(section_titles):
@@ -422,6 +451,276 @@ def confirm_newsletter():
     db.close()
 
     return render_template("success.html", next_send=first_send.isoformat())
+
+#---------------- SCHOOL newsletter builder --------
+@app.route('/build-school-newsletter', methods=['GET'])
+def build_school_newsletter():
+    print("Session Data on Load:", dict(session))
+
+    if 'user_id' not in session:
+        flash("Please log in to create a school newsletter.")
+        return redirect(url_for('login'))
+
+    # --- Clear Syllabus Session if Reset Param is Present ---
+    if request.args.get('reset') == 'true':
+        session.pop('syllabus_course_name', None)
+        session.pop('syllabus_extracted_topics', None)
+        print("Session reset triggered. Cleared syllabus data.")
+
+    user_id = session['user_id']
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        plan = user.plan
+        limits = PLAN_FEATURES.get(plan, {'max_total': 1})
+
+        # Count TOTAL newsletters across both tables
+        general_count = db.query(Newsletter).filter(Newsletter.user_id == user_id).count()
+        school_count = db.query(SchoolNewsletter).filter(SchoolNewsletter.user_id == user_id).count()
+        total_count = general_count + school_count
+
+        if limits['max_total'] is not None and total_count >= limits['max_total']:
+            flash("You’ve reached your plan’s newsletter limit. Upgrade to create more.")
+            return redirect(url_for('dashboard'))
+
+        # Pass current session data (could be empty if reset)
+        return render_template('build_school.html',
+                               syllabus_course_name=session.get('syllabus_course_name', ''),
+                               extracted_topics=session.get('syllabus_extracted_topics', []))
+
+    finally:
+        db.close()
+
+
+
+from planner_school import create_study_plan  # Ensure this is at the top
+
+@app.route('/generate-school-newsletter')
+def generate_school_newsletter():
+    data = session.get('school_newsletter_input')
+    if not data:
+        flash("Something went wrong. Please try again.")
+        return redirect(url_for('build_school_newsletter'))
+
+    course_name = data['course_name']
+    topics = data['topics']
+    content_types = data['content_types']  # list of strings
+
+    # 🔥 Generate plan using GPT
+    plan_title, summary, section_titles = create_study_plan(course_name, topics, content_types)
+
+    if not plan_title or not section_titles:
+        flash("AI failed to generate a valid study plan. Please try again.")
+        return redirect(url_for('build_school_newsletter'))
+
+
+    # 🧠 Store completed plan in session
+    session['school_newsletter'] = {
+        **data,
+        'course_name': course_name,
+        'topics': topics,
+        'content_types': content_types,
+        'plan_title': plan_title,
+        'section_titles': section_titles,
+        'summary': summary
+    }
+
+    max_datetime = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
+
+    return render_template(
+        'school_preview.html',
+        plan=session['school_newsletter'],
+        max_datetime=max_datetime
+    )
+
+
+#---------------- SCHOOL Create newsletter----------
+@app.route('/create-school-newsletter', methods=['POST'])
+def create_school_newsletter():
+    course_name = request.form['course_name']
+    topics = request.form['topics']
+    frequency = request.form['frequency']
+    email = request.form.get('email')
+    content_types = request.form.getlist('content_types')  # comes in as list of strings
+    user_id = session.get('user_id')
+
+    if not user_id:
+        flash("You must be logged in to create a school newsletter.")
+        return redirect(url_for('login'))
+
+    session['school_newsletter_input'] = {
+        'user_id': user_id,
+        'email': email,
+        'course_name': course_name,
+        'topics': topics,
+        'frequency': frequency,
+        'content_types': content_types
+    }
+
+    return render_template('loading_school.html', topic=course_name, demographic="Students")
+
+
+#----------------- SCHOOl confirm newsletter and database storage -------
+@app.route('/confirm-school-newsletter', methods=['POST'])
+def confirm_school_newsletter():
+    from datetime import datetime, timedelta, timezone
+    import pytz
+
+    data = session.get('school_newsletter', {})
+    if not data:
+        return redirect(url_for('build_school_newsletter'))
+
+    frequency = request.form.get('frequency')
+    send_time = request.form.get('send_time')
+    course_name = request.form.get('course_name') or data.get('course_name')
+    data['frequency'] = frequency
+
+    user_id = data.get('user_id')
+    email = data.get('email')
+    topics = data.get('topics')
+    section_titles = data.get('section_titles')
+    content_types = data.get('content_types')
+    summary = data.get('summary')
+
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+
+    if send_time == 'now':
+        first_send = now
+    elif send_time == 'tomorrow':
+        first_send = now + timedelta(days=1)
+    elif send_time == 'in_2_days':
+        first_send = now + timedelta(days=2)
+    elif send_time == 'in_3_days':
+        first_send = now + timedelta(days=3)
+    elif send_time == 'next_week':
+        first_send = now + timedelta(days=7)
+    else:
+        try:
+            naive = datetime.fromisoformat(send_time)
+            local = pytz.timezone("America/Chicago").localize(naive)
+            first_send = local.astimezone(timezone.utc)
+        except Exception as e:
+            print("❌ Error parsing custom time, defaulting to now:", e)
+            first_send = now
+
+    freq_map = {'daily': 1, 'bidaily': 2, 'weekly': 7}
+    interval_days = freq_map.get(frequency.lower(), 7)
+
+    db = SessionLocal()
+
+    # ✅ Plan limit enforcement (using max_total only)
+    user = db.query(User).filter(User.id == user_id).first()
+    plan = user.plan.lower() if user and user.plan else 'free'
+    limits = PLAN_FEATURES.get(plan, {'max_total': 1})
+
+    general_count = db.query(Newsletter).filter(Newsletter.user_id == user_id).count()
+    school_count = db.query(SchoolNewsletter).filter(SchoolNewsletter.user_id == user_id).count()
+    total_count = general_count + school_count
+
+    if limits['max_total'] is not None and total_count >= limits['max_total']:
+        db.close()
+        flash("You’ve reached your plan’s newsletter limit. Upgrade to create more.")
+        return redirect(url_for('dashboard'))
+
+    # ✅ Insert into SchoolNewsletter table (always active)
+    new_school_plan = SchoolNewsletter(
+        user_id=user_id,
+        email=email,
+        course_name=course_name,
+        topics=topics,
+        content_types=json.dumps(content_types),
+        frequency=frequency,
+        next_send_time=first_send,
+        is_active=1,  # Always active now
+        summary=summary
+    )
+    db.add(new_school_plan)
+    db.commit()
+
+    new_school_plan_id = new_school_plan.id
+    print("🧾 Inserted SchoolNewsletter ID:", new_school_plan_id)
+
+    # ✅ Date Sync Data Fetch
+    date_topic_map = session.get('syllabus_date_topic_map', {})
+    date_sync_enabled = session.get('date_sync_enabled', False)
+
+    print("🗓 Date Topic Map Keys Loaded:", list(date_topic_map.keys()))
+    print(f"📢 Date Sync Enabled: {date_sync_enabled}")
+
+    # ✅ Schedule emails with Date Sync Override
+    for i, title in enumerate(section_titles):
+        send_date = first_send + timedelta(days=interval_days * i)
+        send_date_str = send_date.strftime('%Y-%m-%d')
+
+        print(f"Processing Email {i+1}: Send Date {send_date_str}")
+
+        if date_sync_enabled:
+            if send_date_str in date_topic_map:
+                print(f"✅ MATCH FOUND — Overriding title: '{title}' → '{date_topic_map[send_date_str]}'")
+                title = date_topic_map[send_date_str]
+            else:
+                print(f"❌ No match for {send_date_str}. Keeping AI-generated title.")
+
+        email_obj = Email(
+            user_id=user_id,
+            plan_id=new_school_plan_id,
+            position_in_plan=i + 1,
+            title=title,
+            send_date=send_date,
+            sent=False
+        )
+        db.add(email_obj)
+
+    db.commit()
+    db.close()
+
+    # ✅ Session Cleanup
+    session.pop('syllabus_course_name', None)
+    session.pop('syllabus_extracted_topics', None)
+    session.pop('syllabus_date_topic_map', None)
+    session.pop('date_sync_enabled', None)
+
+    return render_template("success.html", next_send=first_send.isoformat())
+
+
+
+#--------------- Syllabus Upload --------------------
+@app.route('/upload-syllabus', methods=['POST'])
+def upload_syllabus():
+    if 'user_id' not in session:
+        flash("Please log in to upload a syllabus.")
+        return redirect(url_for('login'))
+
+    syllabus_file = request.files.get('syllabus')
+    if not syllabus_file:
+        flash("No file uploaded.")
+        return redirect(url_for('build_school_newsletter'))
+
+    file_content = syllabus_file.read()
+
+    # Get both course title and topics from AI
+    extraction_result = extract_topics_from_syllabus(file_content, syllabus_file.filename)
+
+    course_title = extraction_result.get('course_title', '')
+    topics = extraction_result.get('topics', [])
+    date_topic_map = extraction_result.get('date_topic_map', {})
+
+    # Store in session
+    session['syllabus_course_name'] = course_title
+    session['syllabus_extracted_topics'] = topics
+    session['syllabus_date_topic_map'] = date_topic_map
+
+    # Capture Date Sync checkbox from form and persist in session
+    date_sync_enabled = 'date_sync' in request.form
+    session['date_sync_enabled'] = date_sync_enabled
+    print(f"✅ Date Sync Enabled captured in upload: {date_sync_enabled}")
+
+    # Debug Outputs
+    print("Extracted Course Title:", course_title)
+    print("Extracted Topics:", topics)
+    print("Extracted Date Topic Map:", date_topic_map)
+
+    return redirect(url_for('build_school_newsletter'))
 
 # ---------------- User Registration ----------------
 from sqlalchemy.exc import IntegrityError
@@ -510,27 +809,27 @@ def dashboard():
     user_id = session['user_id']
     db = SessionLocal()
     try:
-        # 🔵 Active newsletters
-        newsletters_active = (
-            db.query(Newsletter)
-            .filter(Newsletter.user_id == user_id, Newsletter.is_active == True)
-            .order_by(Newsletter.next_send_time.desc())
-            .all()
-        )
-
-        # 🟡 Paused newsletters
-        newsletters_paused = (
-            db.query(Newsletter)
-            .filter(Newsletter.user_id == user_id, Newsletter.is_active == False)
-            .order_by(Newsletter.next_send_time.desc())
-            .all()
-        )
-
-        # 🧠 Fetch user's plan
+        # 🧠 Fetch user and their plan
         user = db.query(User).filter(User.id == user_id).first()
         user_plan = user.plan.lower() if user and user.plan else 'free'
 
-        # 🧠 Get progress per plan (sent vs total)
+        # 🔵 Fetch general newsletters
+        general_newsletters = (
+            db.query(Newsletter)
+            .filter(Newsletter.user_id == user_id)
+            .order_by(Newsletter.next_send_time.desc())
+            .all()
+        )
+
+        # 🟣 Fetch school newsletters
+        school_newsletters = (
+            db.query(SchoolNewsletter)
+            .filter(SchoolNewsletter.user_id == user_id)
+            .order_by(SchoolNewsletter.next_send_time.desc())
+            .all()
+        )
+
+        # 🧠 Get plan progress using general emails table only (school content reuses it)
         email_rows = (
             db.query(Email.plan_id)
             .filter(Email.user_id == user_id)
@@ -547,34 +846,57 @@ def dashboard():
             for row in email_rows
         }
 
-        # 💡 Limits
+        # 🧩 Normalize both general and school newsletters into a single unified list
+        def format_general(n):
+            return {
+                "id": n.id,
+                "plan_title": n.plan_title,
+                "summary": n.summary,
+                "topic": n.topic,
+                "tone": n.tone,
+                "frequency": n.frequency,
+                "next_send_time": n.next_send_time,
+                "type": "general"
+            }
+
+        import json
+        def format_school(n):
+            return {
+                "id": n.id,
+                "plan_title": n.course_name,
+                "summary": n.summary,
+                "topic": n.topics,
+                "tone": "N/A",
+                "frequency": n.frequency,
+                "next_send_time": n.next_send_time,
+                "type": "school",
+                "content_types": json.loads(n.content_types) if n.content_types else []
+            }
+
+        newsletters_active = [format_general(n) for n in general_newsletters] + [format_school(n) for n in school_newsletters]
+
+        # 💡 Plan limits (max_total only)
         plan_features = PLAN_FEATURES.get(user_plan, PLAN_FEATURES['free'])
-        active_limit = plan_features['max_active']
         total_limit = plan_features['max_total']
 
-        total_newsletters = newsletters_active + newsletters_paused
-
-        # ⏳ Reschedule boundary
-        min_datetime = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
-
         active_count = len(newsletters_active)
-        total_count = len(total_newsletters)
+        total_count = active_count  # no paused section anymore
 
-        active_limit_display = active_limit if active_limit is not None else 'Unlimited'
         total_limit_display = total_limit if total_limit is not None else 'Unlimited'
+
+        # ⏳ Set min datetime for rescheduling
+        min_datetime = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
 
         return render_template(
             'dashboard.html',
             newsletters_active=newsletters_active,
-            newsletters_paused=newsletters_paused,
-            total_newsletters=total_newsletters,
+            newsletters_paused=[],  # no longer used
+            total_newsletters=newsletters_active,
             min_datetime=min_datetime,
-            active_limit=active_limit,
             total_limit=total_limit,
             user_plan=user_plan,
             active_count=active_count,
             total_count=total_count,
-            active_limit_display=active_limit_display,
             total_limit_display=total_limit_display,
             plan_progress=plan_progress
         )
@@ -582,8 +904,9 @@ def dashboard():
     finally:
         db.close()
 
-
 #-------------- Change Send Timer ---------
+from pytz import utc
+
 from pytz import utc
 
 @app.route('/update-send-time', methods=['POST'])
@@ -596,7 +919,6 @@ def update_send_time():
     plan_id = request.form.get('plan_id')
     new_time_str = request.form.get('new_send_time')
 
-    # Parse datetime-local input
     try:
         new_send_time = datetime.strptime(new_time_str, "%Y-%m-%dT%H:%M")
         new_send_time = new_send_time.replace(tzinfo=utc).astimezone(utc).replace(tzinfo=None)
@@ -604,41 +926,47 @@ def update_send_time():
         flash("Invalid date format.")
         return redirect('/dashboard')
 
-    # Enforce minimum of 7 days in future
     if new_send_time < datetime.now() + timedelta(days=7):
         flash("Send time must be at least one week from now.")
         return redirect('/dashboard')
 
     db = SessionLocal()
     try:
-        # Check ownership and get frequency
+        # Try general newsletter first
         newsletter = db.query(Newsletter).filter(
             Newsletter.id == plan_id,
             Newsletter.user_id == user_id
         ).first()
 
-        if not newsletter:
-            flash("Newsletter not found or access denied.")
-            return redirect('/dashboard')
+        # If not found, try school newsletter
+        if newsletter:
+            frequency = newsletter.frequency.lower()
+        else:
+            newsletter = db.query(SchoolNewsletter).filter(
+                SchoolNewsletter.id == plan_id,
+                SchoolNewsletter.user_id == user_id
+            ).first()
+            if not newsletter:
+                flash("Newsletter not found or access denied.")
+                return redirect('/dashboard')
+            frequency = newsletter.frequency.lower()
 
-        frequency = newsletter.frequency.lower()
         delta = {
             "daily": timedelta(days=1),
             "bidaily": timedelta(days=2),
             "weekly": timedelta(weeks=1),
         }.get(frequency, timedelta(weeks=1))
 
-        # Update newsletter next_send_time
+        # Update next send time
         newsletter.next_send_time = new_send_time
         db.commit()
 
-        # Get future unsent emails
+        # Update future unsent emails
         unsent_emails = db.query(Email).filter(
             Email.plan_id == plan_id,
             Email.sent == False
         ).order_by(asc(Email.position_in_plan)).all()
 
-        # Update send dates
         for i, email in enumerate(unsent_emails):
             email.send_date = new_send_time + i * delta
 
@@ -650,6 +978,7 @@ def update_send_time():
         db.close()
 
 
+
 # ----------- Delete Newsletter -----------
 @app.route('/delete-newsletter', methods=['POST'])
 def delete_newsletter():
@@ -659,14 +988,24 @@ def delete_newsletter():
 
     user_id = session['user_id']
     plan_id = request.form.get('plan_id')
+    plan_type = request.form.get('plan_type')  # added to distinguish between general and school
 
     db = SessionLocal()
     try:
-        # Verify the plan belongs to the user
-        newsletter = db.query(Newsletter).filter(
-            Newsletter.id == plan_id,
-            Newsletter.user_id == user_id
-        ).first()
+        # Determine which table to query from
+        if plan_type == "school":
+            newsletter = db.query(SchoolNewsletter).filter(
+                SchoolNewsletter.id == plan_id,
+                SchoolNewsletter.user_id == user_id
+            ).first()
+        elif plan_type == "general":
+            newsletter = db.query(Newsletter).filter(
+                Newsletter.id == plan_id,
+                Newsletter.user_id == user_id
+            ).first()
+        else:
+            flash("Invalid newsletter type.")
+            return redirect(url_for('dashboard'))
 
         if not newsletter:
             flash("Invalid or unauthorized newsletter plan.")
@@ -688,121 +1027,6 @@ def delete_newsletter():
     finally:
         db.close()
 
-
-#--------- Toggle Newsletter --------------
-@app.route('/toggle-newsletter-status', methods=['POST'])
-def toggle_newsletter_status():
-    if 'user_id' not in session:
-        return redirect('/login')
-
-    user_id = session['user_id']
-    newsletter_id = request.form.get('newsletter_id')
-
-    db = SessionLocal()
-    try:
-        # Get current status
-        newsletter = db.query(Newsletter).filter(
-            Newsletter.id == newsletter_id,
-            Newsletter.user_id == user_id
-        ).first()
-
-        if not newsletter:
-            flash("Newsletter not found.")
-            return redirect(url_for('dashboard'))
-
-        current_status = newsletter.is_active
-
-        # Check plan limits if activating
-        if current_status == False:
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                flash("Could not verify your plan.")
-                return redirect(url_for('dashboard'))
-
-            plan = user.plan
-            limits = PLAN_FEATURES.get(plan, {'max_active': 1})
-
-            active_count = db.query(Newsletter).filter(
-                Newsletter.user_id == user_id,
-                Newsletter.is_active == True
-            ).count()
-
-            if limits['max_active'] is not None and active_count >= limits['max_active']:
-                flash("You’ve reached your active newsletter limit. Pause one to activate another.")
-                return redirect(url_for('dashboard'))
-
-        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        freq_map = {'daily': 1, 'bidaily': 2, 'weekly': 7}
-        frequency = (newsletter.frequency or "weekly").lower()
-        interval_days = freq_map.get(frequency, 7)
-
-        if current_status == True:
-            # PAUSING: is_active = False, clear future unsent emails and next_send_time
-            newsletter.is_active = False
-            newsletter.next_send_time = None
-
-            db.query(Email).filter(
-                Email.plan_id == newsletter_id,
-                Email.user_id == user_id,
-                Email.sent == False
-            ).update({Email.send_date: None})
-        else:
-            # RESUMING
-            newsletter.is_active = True
-
-            # Only reassign if all send dates were cleared
-            first_unsent = db.query(Email).filter(
-                Email.plan_id == newsletter_id,
-                Email.user_id == user_id,
-                Email.sent == False
-            ).order_by(Email.position_in_plan.asc()).first()
-
-            if not first_unsent or first_unsent.send_date is None:
-                # Apply a 1-day grace buffer before resuming
-                resume_anchor = now + timedelta(days=1)
-                newsletter.next_send_time = resume_anchor
-
-                unsent_emails = db.query(Email).filter(
-                    Email.plan_id == newsletter_id,
-                    Email.user_id == user_id,
-                    Email.sent == False
-                ).order_by(Email.position_in_plan.asc()).all()
-
-                for i, email in enumerate(unsent_emails):
-                    email.send_date = resume_anchor + timedelta(days=interval_days * i)
-
-        db.commit()
-        flash("Newsletter status updated.")
-        return redirect(url_for('dashboard'))
-
-    finally:
-        db.close()
-
-#---------- Deactivate Newsletter ---------
-@app.route('/deactivate-newsletter', methods=['POST'])
-def deactivate_newsletter():
-    if 'user_id' not in session:
-        return redirect('/login')
-
-    user_id = session['user_id']
-    newsletter_id = request.form.get('newsletter_id')
-
-    db = SessionLocal()
-    try:
-        newsletter = db.query(Newsletter).filter(
-            Newsletter.id == newsletter_id,
-            Newsletter.user_id == user_id
-        ).first()
-
-        if newsletter:
-            newsletter.is_active = False
-            db.commit()
-
-        flash("Newsletter deactivated successfully.", "rescheduled")
-        return redirect(url_for('dashboard'))
-
-    finally:
-        db.close()
 
 #----------------- Account settings -------
 @app.route('/account-settings', methods=['GET', 'POST'])
@@ -1072,7 +1296,6 @@ def stripe_webhook():
         conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         cursor = conn.cursor()
 
-        # ✅ New subscription via checkout
         if event['type'] == 'checkout.session.completed':
             from datetime import datetime
             session_data = event['data']['object']
@@ -1160,9 +1383,6 @@ def stripe_webhook():
                 print(f"⚠️ Missing customer in deleted event.")
                 return '', 200
 
-            if ends_at is None:
-                print(f"⚠️ Ends_at was missing, using current UTC time instead → {subscription_end_date}")
-
             cursor.execute("SELECT id, downgrade_to FROM users WHERE stripe_customer_id = %s", (stripe_customer_id,))
             row = cursor.fetchone()
 
@@ -1179,42 +1399,21 @@ def stripe_webhook():
                 WHERE id = %s
             """, (new_plan, subscription_end_date, user_id))
 
-            limits = PLAN_FEATURES.get(new_plan, {'max_total': 1, 'max_active': 1})
+            # 🔥 Only enforce max_total now
+            limits = PLAN_FEATURES.get(new_plan, {'max_total': 1})
 
             cursor.execute("""
-                SELECT id, is_active 
+                SELECT id 
                 FROM newsletters 
                 WHERE user_id = %s 
                 ORDER BY next_send_time ASC
             """, (user_id,))
             newsletters = cursor.fetchall()
 
-            active_ids = [n['id'] for n in newsletters if n['is_active'] == 1]
-            paused_ids = [n['id'] for n in newsletters if n['is_active'] == 0]
-
-            if limits['max_active'] is not None and len(active_ids) > limits['max_active']:
-                ids_to_pause = active_ids[limits['max_active']:]
-                cursor.executemany("""
-                    UPDATE newsletters 
-                    SET is_active = 0 
-                    WHERE id = %s AND user_id = %s
-                """, [(nid, user_id) for nid in ids_to_pause])
-                print(f"⏸️ Paused {len(ids_to_pause)} active newsletters due to downgrade.")
-
-            cursor.execute("""
-                SELECT id, is_active 
-                FROM newsletters 
-                WHERE user_id = %s 
-                ORDER BY next_send_time ASC
-            """, (user_id,))
-            newsletters = cursor.fetchall()
-            active_ids = [n['id'] for n in newsletters if n['is_active'] == 1]
-            paused_ids = [n['id'] for n in newsletters if n['is_active'] == 0]
-
-            total_count = len(active_ids) + len(paused_ids)
+            total_count = len(newsletters)
             if limits['max_total'] is not None and total_count > limits['max_total']:
                 excess = total_count - limits['max_total']
-                ids_to_delete = paused_ids[:excess]
+                ids_to_delete = [n['id'] for n in newsletters][:excess]
                 cursor.executemany("""
                     DELETE FROM newsletters 
                     WHERE id = %s AND user_id = %s
@@ -1223,7 +1422,7 @@ def stripe_webhook():
                     DELETE FROM emails 
                     WHERE plan_id = %s
                 """, [(nid,) for nid in ids_to_delete])
-                print(f"🗑️ Deleted {len(ids_to_delete)} paused newsletters due to total limit.")
+                print(f"🗑️ Deleted {len(ids_to_delete)} newsletters due to total limit.")
 
             conn.commit()
             print(f"✅ Downgraded user {user_id} to {new_plan} after subscription end.")
@@ -1284,4 +1483,4 @@ def submit_review():
 # ---------------- Run App ----------------
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)

@@ -1,7 +1,5 @@
 {% extends "base.html" %}
-
 {% block title %}Dashboard - MyNewsletter AI{% endblock %}
-
 {% block content %}
 
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
@@ -9,25 +7,38 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
 <section class="py-20 px-4 max-w-6xl mx-auto" x-data="dashboardComponent()" x-init="initialize()">
-  <div class="flex items-center justify-between mb-10">
-    <h1 class="text-3xl font-bold tracking-tight text-gray-800">Your Newsletters</h1>
-    <a href="/build-newsletter" class="bg-blue-600 text-white px-5 py-2 rounded-xl shadow hover:bg-blue-700 transition text-sm font-medium">
-      + New Newsletter
-    </a>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
+    <div class="flex flex-col">
+      <h1 class="text-2xl sm:text-3xl font-bold text-[var(--color-text)]">Your Newsletters</h1>
+      <p class="text-sm text-[var(--color-muted)]">Manage your email series and study plans</p>
+    </div>
+    
+    <div class="flex items-center gap-4">
+      <!-- Small counter pill -->
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-semibold
+                  bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] border-[var(--color-accent)] shadow-sm">
+        <span>{{ active_count }}</span>
+        <span class="text-[var(--color-muted)]">/</span>
+        <span>
+          {% if total_limit is none %}
+            Unlimited
+          {% else %}
+            {{ total_limit }}
+          {% endif %}
+        </span>
+      </div>
+
+
+      <!-- CTA button -->
+      <a href="/choose-newsletter-type"
+         class="btn-primary text-sm flex items-center gap-2 px-6 py-2.5 rounded-full shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5">
+        <span class="text-xl font-bold">+</span>
+        <span class="font-semibold">New Newsletter</span>
+      </a>
+
+    </div>
   </div>
 
-  <div class="flex flex-wrap gap-4 mb-6">
-    <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-      <span class="text-blue-600 font-semibold">Active:</span>
-      <span class="text-gray-800 font-medium">{{ active_count }}</span>
-      <span class="text-gray-400">/ {{ active_limit_display }}</span>
-    </div>
-    <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-      <span class="text-indigo-600 font-semibold">Total:</span>
-      <span class="text-gray-800 font-medium">{{ total_count }}</span>
-      <span class="text-gray-400">/ {{ total_limit_display }}</span>
-    </div>
-  </div>
 
   {% with messages = get_flashed_messages() %}
     {% if messages %}
@@ -38,263 +49,151 @@
         x-transition
         class="fixed inset-0 flex items-start justify-center mt-20 z-50 pointer-events-none"
       >
-        <div class="bg-white border border-gray-300 shadow-xl rounded-xl px-6 py-4 text-gray-800 w-full max-w-sm mx-auto text-center pointer-events-auto">
+        <div class="bg-white border border-gray-300 shadow-xl rounded-xl px-6 py-4 text-[var(--color-text)] w-full max-w-sm mx-auto text-center pointer-events-auto">
           <p class="text-base font-semibold">{{ messages[0] }}</p>
         </div>
       </div>
     {% endif %}
   {% endwith %}
 
-<!-- Active Newsletters -->
-<div class="mb-12">
-  <h2 class="text-xl font-semibold text-blue-700 mb-4">Active Newsletters</h2>
-  {% if newsletters_active %}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-      {% for n in newsletters_active %}
-        <div class="bg-white rounded-2xl border border-gray-200 shadow hover:shadow-lg transition transform hover:-translate-y-1 p-6 space-y-5">
-          <div class="flex justify-between items-start">
-            <div>
-              <h3 class="text-lg font-bold text-gray-800 tracking-tight">{{ n['plan_title'] }}</h3>
-              {% set progress = plan_progress.get(n['id']) %}
-              {% if progress %}
-                <p class="text-xs text-gray-500 mt-1">
-                  {{ progress.total - progress.sent }} email{{ 's' if (progress.total - progress.sent) != 1 else '' }} left in plan.
-                </p>
-              {% endif %}
-            </div>
-            <span class="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded">Active</span>
-          </div>
-          <p class="text-sm text-gray-600 bg-gray-50 border border-gray-100 rounded px-3 py-2 leading-snug">{{ n['summary'] }}</p>
-          <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <div><span class="font-medium text-gray-500">Topic:</span> {{ n['topic'] }}</div>
-            <div><span class="font-medium text-gray-500">Tone:</span> {{ n['tone'] }}</div>
-            <div><span class="font-medium text-gray-500">Frequency:</span> {{ n['frequency'] }}</div>
-            <div>
-              <span class="font-medium text-gray-500">Next:</span>
-              <span
-                class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded"
-                data-utc="{{ n.next_send_time.isoformat() }}Z"
-              >
-                Loading local time...
-              </span>
-            </div>
-            <div class="col-span-2">
-              <!-- Reschedule Button -->
-              <button
-                onclick="openReschedule({ id: {{ n['id'] }}, date: '{{ n['next_send_time'].strftime("%Y-%m-%dT%H:%M") }}' })"
-                class="btn-outline w-full flex justify-center items-center gap-2 text-sm mt-2"
-              >
-                🕒 Reschedule
-              </button>
-            </div>
-          </div>
-          <form action="/toggle-newsletter-status" method="POST">
-            <input type="hidden" name="newsletter_id" value="{{ n['id'] }}">
-            <button type="submit" class="btn-outline w-full text-yellow-700 border-yellow-400 hover:bg-yellow-50 text-sm flex items-center justify-center gap-2 mt-2">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
-              </svg>
-              Pause
-            </button>
-          </form>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="text-center text-gray-500">No active newsletters found.</p>
-  {% endif %}
-</div>
-
-<!-- Global Reschedule Modal -->
-<div 
-  class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-  style="display: none;" 
-  id="reschedule-modal"
->
-  <div class="bg-white w-full max-w-md rounded-xl shadow-xl p-6 space-y-4">
-    <h3 class="text-lg font-semibold text-gray-800 mb-2">Reschedule Newsletter</h3>
-    <form action="/update-send-time" method="POST" class="space-y-4">
-      <input type="hidden" name="plan_id" id="modal-plan-id">
-      <div>
-        <label for="modal-new-send-time" class="block text-sm font-medium text-gray-700 mb-1">New Send Time</label>
-        <input type="datetime-local" name="new_send_time" id="modal-new-send-time" min="{{ min_datetime }}" required
-          class="w-full rounded border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
-      <div class="flex gap-3">
-        <button type="submit" class="btn-primary flex-1 text-sm">✅ Confirm</button>
-        <button type="button" onclick="closeModal()" class="btn-outline flex-1 text-sm">Cancel</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<script>
-  function openReschedule(data) {
-    document.getElementById('modal-plan-id').value = data.id;
-    document.getElementById('modal-new-send-time').value = data.date.slice(0, 16);
-    document.getElementById('reschedule-modal').style.display = 'flex';
-  }
-
-  function closeModal() {
-    document.getElementById('reschedule-modal').style.display = 'none';
-  }
-</script>
-
-
-<!-- Paused Newsletters -->
-<div class="mb-12">
-  <h2 class="text-xl font-semibold text-yellow-700 mb-4">Paused Newsletters</h2>
-  {% if newsletters_paused %}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-      {% for n in newsletters_paused %}
-        <div class="bg-white rounded-2xl border border-gray-200 shadow hover:shadow-lg transition transform hover:-translate-y-1 p-6 space-y-5" x-data="{ showDelete: false }">
-          <div class="flex justify-between items-start">
-            <div>
-              <h3 class="text-lg font-bold text-gray-800 tracking-tight">{{ n['plan_title'] }}</h3>
-              {% set progress = plan_progress.get(n['id']) %}
-              {% if progress %}
-                <p class="text-xs text-gray-500 mt-1">
-                  {{ progress.total - progress.sent }} email{{ 's' if (progress.total - progress.sent) != 1 else '' }} left in plan.
-                </p>
-              {% endif %}
-            </div>
-            <span class="text-xs bg-yellow-100 text-yellow-800 font-semibold px-2 py-0.5 rounded">Paused</span>
-          </div>
-          <p class="text-sm text-gray-600 bg-gray-50 border border-gray-100 rounded px-3 py-2 leading-snug">{{ n['summary'] }}</p>
-          <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <div><span class="font-medium text-gray-500">Topic:</span> {{ n['topic'] }}</div>
-            <div><span class="font-medium text-gray-500">Tone:</span> {{ n['tone'] }}</div>
-            <div><span class="font-medium text-gray-500">Frequency:</span> {{ n['frequency'] }}</div>
-            <div>
-              <span class="font-medium text-gray-500">Next:</span>
-                            <span
-                class="inline-block bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded"
-                data-utc="{{ n['next_send_time'] }}Z"
-              >
-                Loading local time...
-              </span>
-            </div>
-          </div>
-          <form action="/toggle-newsletter-status" method="POST">
-            <input type="hidden" name="newsletter_id" value="{{ n['id'] }}">
-            <button type="submit" class="btn-outline w-full text-green-700 border-green-600 hover:bg-green-50 text-sm flex items-center justify-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-              Activate
-            </button>
-          </form>
-          <div>
-            <button @click="showDelete = !showDelete" class="btn-outline text-sm w-full text-red-600 border-red-500 hover:bg-red-50 flex items-center justify-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Delete
-            </button>
-            <div x-show="showDelete" x-transition class="mt-3 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
-              <p class="mb-2 font-medium">Are you sure? This action cannot be undone.</p>
-              <form action="/delete-newsletter" method="POST" class="space-y-2">
-                <input type="hidden" name="plan_id" value="{{ n['id'] }}">
-                <div class="flex gap-2">
-                  <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm">Confirm</button>
-                  <button type="button" @click="showDelete = false" class="btn-outline text-sm">Cancel</button>
+  <!-- Active Newsletters -->
+  <div class="mb-12">
+    {% if newsletters_active %}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {% for n in newsletters_active %}
+          <div class="{% if n['type'] == 'school' %}theme-school{% else %}theme-general{% endif %}">
+            <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-md hover:shadow-xl hover:-translate-y-1 transition-transform space-y-5 flex flex-col h-full justify-between">
+              <!-- Header -->
+              <div class="flex justify-between items-start">
+                <div class="grid grid-cols-1 gap-2 w-full">
+                  <div>
+                    <h3 class="text-lg font-semibold text-[var(--color-text)] flex items-center gap-2">
+                      {% if n['type'] == 'school' %} 🎓 {% else %} 📰 {% endif %}
+                      {{ n['plan_title'] }}
+                    </h3>
+                  </div>
+                  {% set progress = plan_progress.get(n['id']) %}
+                  {% if progress %}
+                    {% set pct_complete = (progress.sent / progress.total * 100) | round(0, 'floor') %}
+                    <div class="w-full">
+                      <div class="flex justify-between items-center mb-1 text-xs font-semibold text-[var(--color-muted)]">
+                        <span>{{ pct_complete }}% Complete</span>
+                        <span>{{ progress.sent }}/{{ progress.total }} emails</span>
+                      </div>
+                      <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div class="bg-[var(--color-accent)] h-2.5 rounded-full transition-all duration-500" style="width: {{ pct_complete }}%;"></div>
+                      </div>
+                    </div>
+                  {% endif %}
                 </div>
-              </form>
+                <span class="tag">{{ n['type']|capitalize }}</span>
+              </div>
+
+
+              <!-- Summary Highlight -->
+              <p class="text-sm leading-relaxed italic border-l-4 pl-4 py-2 bg-[var(--color-accent-bg)] border-[var(--color-accent)]">
+                {{ n['summary'] }}
+              </p>
+
+              <!-- Details Grid -->
+              <div class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                {% if n['topic'] %}
+                  <div>
+                    <span class="subheading block mb-0.5">Topic</span>
+                    {{ n['topic'][:40] }}{% if n['topic']|length > 40 %}...{% endif %}
+                  </div>
+                {% endif %}
+
+                {% if n['type'] == 'school' %}
+                  {% if n['content_types'] %}
+                    <div>
+                      <span class="subheading block mb-0.5">Content</span>
+                      {{ n['content_types'] | join(', ') }}
+                    </div>
+                  {% endif %}
+                {% else %}
+                  {% if n['tone'] %}
+                    <div>
+                      <span class="subheading block mb-0.5">Tone</span>
+                      {{ n['tone'] }}
+                    </div>
+                  {% endif %}
+                {% endif %}
+
+                {% if n['frequency'] %}
+                  <div>
+                    <span class="subheading block mb-0.5">Frequency</span>
+                    {{ n['frequency'] }}
+                  </div>
+                {% endif %}
+
+                <div>
+                  <span class="subheading block mb-0.5">Next Send</span>
+                  <span class="inline-block text-xs font-semibold px-2 py-0.5 rounded bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)]" data-utc="{{ n.next_send_time.isoformat() }}Z">
+                    Loading...
+                  </span>
+                </div>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex flex-col gap-2 pt-4 mt-auto">
+                <div x-data="{ showDelete: false }">
+                  <button @click="showDelete = !showDelete" class="btn-outline text-sm w-full text-red-600 border-red-500 hover:bg-red-50 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Delete
+                  </button>
+                  <div x-show="showDelete" x-transition class="mt-3 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
+                    <p class="mb-2 font-medium">Are you sure? This action cannot be undone.</p>
+                    <form action="/delete-newsletter" method="POST" class="space-y-2">
+                      <input type="hidden" name="plan_id" value="{{ n['id'] }}">
+                      <input type="hidden" name="plan_type" value="{{ n['type'] }}">
+                      <div class="flex gap-2">
+                        <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm">Confirm</button>
+                        <button type="button" @click="showDelete = false" class="btn-outline text-sm">Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="text-center text-gray-500">No paused newsletters found.</p>
-  {% endif %}
-</div>
+
+
+
+
+
+
+
+
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-center text-[var(--color-muted)]">No active newsletters found.</p>
+    {% endif %}
+  </div>
 </section>
 
 <script>
-  function dashboardComponent() {
-    return {
-      showModal: false,
-      modalData: { id: null, date: null },
-      openReschedule(data) {
-        this.modalData = { ...data };
-        this.showModal = true;
-        this.$nextTick(() => {
-          const rounded = new Date(data.date || new Date());
-          const mins = rounded.getMinutes();
-          rounded.setMinutes(mins - (mins % 5), 0, 0);
-          this.modalData.date = rounded.toISOString().slice(0, 16);
-          flatpickr(this.$refs.calendar, {
-            inline: true,
-            enableTime: true,
-            dateFormat: 'Y-m-d\\TH:i',
-            defaultDate: this.modalData.date,
-            minDate: '{{ min_datetime }}',
-            onChange: (selectedDates) => {
-              const localDate = selectedDates[0];
-              const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
-              this.modalData.date = utcDate.toISOString().slice(0, 16);
-            }
-
+  document.addEventListener("DOMContentLoaded", function() {
+    const utcElements = document.querySelectorAll("[data-utc]");
+    utcElements.forEach(el => {
+      const utcString = el.getAttribute("data-utc");
+      if (utcString) {
+        const utcDate = new Date(utcString);
+        if (!isNaN(utcDate.getTime())) {
+          const localString = utcDate.toLocaleString(undefined, {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
           });
-        });
-      },
-      closeModal() {
-        this.showModal = false;
-      },
-      initialize() {}
-    }
-  }
-</script>
-
-
-<!-- ⚠️ Downgrade Warning (Destructive Consequences) -->
-{% if subscription_days_left and downgrade_to %}
-  <div class="w-full px-6 mt-12 mb-20">
-    <div class="max-w-5xl mx-auto bg-red-50 border border-red-300 rounded-2xl p-6 flex flex-col md:flex-row md:items-center md:justify-between shadow-sm">
-      <div class="text-red-800 space-y-2">
-        <p class="text-base font-semibold">
-          ⚠️ Scheduled Downgrade: 
-          <span class="font-bold">{{ downgrade_to|capitalize }}</span> plan in 
-          <span class="font-bold">{{ subscription_days_left }}</span> day{{ 's' if subscription_days_left > 1 else '' }}.
-        </p>
-        <p class="text-sm text-red-700 leading-snug">
-          At that time, active newsletters over the limit will be <strong>paused</strong>, and any over the total limit will be <strong>deleted</strong>.
-        </p>
-      </div>
-      <a href="/pricing" class="mt-4 md:mt-0 inline-block bg-blue-600 text-white text-sm px-4 py-2 rounded-full shadow hover:bg-blue-700 transition">
-        Upgrade again to keep access →
-      </a>
-    </div>
-  </div>
-{% endif %}
-
-<script>
-  document.querySelectorAll('[data-utc]').forEach(el => {
-    const utcStr = el.getAttribute('data-utc');
-    if (!utcStr || utcStr === "nullZ" || utcStr === "undefinedZ") {
-      el.textContent = "Paused";
-      return;
-    }
-
-    const date = new Date(utcStr);
-    if (isNaN(date.getTime())) {
-      el.textContent = "Paused";
-      return;
-    }
-
-    const local = date.toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
+          el.textContent = localString;
+        } else {
+          el.textContent = "Invalid date";
+        }
+      }
     });
-    el.textContent = local;
   });
 </script>
-
-
 
 {% endblock %}

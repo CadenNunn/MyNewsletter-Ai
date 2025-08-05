@@ -1,4 +1,6 @@
 # init_db.py
+from dotenv import load_dotenv
+load_dotenv()
 from db import engine
 from models import Base
 

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Preview Study Plan - MyNewsletter AI{% endblock %}
+
+{% block content %}
+<div class="theme-school">
+  <div class="min-h-screen flex items-center justify-center px-4 py-16 bg-[var(--color-bg)]">
+    <div class="bg-white rounded-2xl shadow-lg max-w-3xl w-full p-10 space-y-8">
+
+      <form action="/confirm-school-newsletter" method="POST" class="space-y-8">
+
+        <!-- Header -->
+        <div class="text-center">
+          <h1 class="heading-1 mb-2 text-[var(--color-accent-dark)]">You're Almost Ready!</h1>
+          <p class="subheading">Here's a final preview before we launch your study plan.</p>
+        </div>
+
+        <!-- Editable Course Name -->
+        <div class="text-center" x-data="{ editing: false, title: '{{ plan.course_name }}' }">
+          <h2 class="heading-2 mb-2">Course Name</h2>
+
+          <div x-show="!editing" class="flex justify-center items-center gap-2">
+            <p class="text-xl font-semibold text-[var(--color-text)]" x-text="title"></p>
+            <button type="button" @click="editing = true" class="text-[var(--color-accent)] hover:text-[var(--color-accent-dark)]">✏️</button>
+          </div>
+
+          <div x-show="editing" class="mt-2">
+            <input 
+              type="text" 
+              name="course_name" 
+              x-model="title" 
+              class="text-center text-xl font-semibold w-full border border-[var(--color-border)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+            >
+            <button type="button" @click="editing = false" class="mt-2 text-sm text-[var(--color-accent)] hover:underline">Done</button>
+          </div>
+
+          <!-- Hidden Inputs -->
+          <input type="hidden" name="topics" value="{{ plan.topics }}">
+          {% for ct in plan.content_types %}
+            <input type="hidden" name="content_types" value="{{ ct }}">
+          {% endfor %}
+          <input type="hidden" name="email" value="{{ plan.email }}">
+        </div>
+
+        <!-- Topics Preview -->
+        <div class="bg-[var(--color-accent-bg)] border-l-4 border-[var(--color-accent)] p-4 rounded-lg">
+          <p class="italic text-[var(--color-text)]">{{ plan.topics }}</p>
+        </div>
+
+        <!-- Frequency & Start Time -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+            <label class="subheading block mb-2 text-sm font-medium text-[var(--color-text)]" for="frequency">Send Frequency</label>
+            <select name="frequency" id="frequency" class="w-full px-4 py-2 border border-[var(--color-border)] rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm">
+              <option value="daily" {% if plan.frequency == 'daily' %}selected{% endif %}>Daily</option>
+              <option value="bidaily" {% if plan.frequency == 'bidaily' %}selected{% endif %}>Every 2 Days</option>
+              <option value="weekly" {% if plan.frequency == 'weekly' %}selected{% endif %}>Weekly</option>
+            </select>
+          </div>
+
+          <div class="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+            <label class="subheading block mb-2 text-sm font-medium text-[var(--color-text)]" for="send_time">When should we send the first email?</label>
+            <select name="send_time" id="send_time" class="w-full px-4 py-2 border border-[var(--color-border)] rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm">
+              <option value="now" selected>Send Now</option>
+              <option value="tomorrow">Send Tomorrow</option>
+              <option value="in_2_days">Send in 2 Days</option>
+              <option value="in_3_days">Send in 3 Days</option>
+              <option value="next_week">Send in 7 Days</option>
+            </select>
+            <p class="text-xs text-[var(--color-muted)] mt-1">Choose when the first email will go out.</p>
+          </div>
+        </div>
+
+        <!-- Confirm Button -->
+        <div class="text-center pt-6">
+          <button type="submit" class="btn-primary text-lg px-6">
+            🎓 Confirm & Schedule
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</div>
+{% endblock %}

@@ -60,3 +60,16 @@ class Review(Base):
     name = Column(Text, nullable=False)
     stars = Column(Integer, nullable=False)
     comment = Column(Text)
+
+class SchoolNewsletter(Base):
+    __tablename__ = 'school_newsletters'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer)
+    email = Column(Text)
+    course_name = Column(Text)
+    topics = Column(Text)
+    content_types = Column(Text)  # JSON string: ["summary", "quiz", "flashcards"]
+    frequency = Column(Text)
+    next_send_time = Column(DateTime)
+    is_active = Column(Boolean, default=True)
+    summary = Column(Text)

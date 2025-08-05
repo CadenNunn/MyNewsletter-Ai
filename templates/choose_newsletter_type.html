@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="max-w-5xl mx-auto py-20 px-6">
+  <h1 class="heading-1 text-center mb-12">What Type of Plan Would You Like to Create?</h1>
+
+  <div class="grid gap-10 md:grid-cols-2">
+
+    <!-- General Newsletter ----------------------------------------------------------
+    <div class="theme-general bg-white border border-[var(--color-border)] rounded-2xl p-8 shadow hover:shadow-xl transition-transform hover:-translate-y-1">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-[var(--color-accent)] text-2xl">📰</span>
+        <h2 class="heading-2">General Newsletter</h2>
+      </div>
+      <p class="body-text mb-6">
+        Create a custom email series on any topic. Perfect for creators, marketers, and professionals who want to engage their audience.
+      </p>
+      <a href="/build-newsletter" class="btn-primary">Create General Newsletter</a>
+    </div>
+------------------------------------------------------------------------------------- -->
+    <!-- School Study Plan -->
+    <div class="theme-school bg-white border border-[var(--color-border)] rounded-2xl p-8 shadow hover:shadow-xl transition-transform hover:-translate-y-1">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-[var(--color-accent)] text-2xl">🎓</span>
+        <h2 class="heading-2">School Study Plan</h2>
+      </div>
+      <p class="body-text mb-6">
+        Build an academic study guide based on your class content. Designed for high school and college students to reinforce learning and boost retention.
+      </p>
+      <a href="{{ url_for('build_school_newsletter') }}?reset=true" class="btn-primary">Create Study Plan</a>
+
+    </div>
+
+  </div>
+</section>
+{% endblock %}

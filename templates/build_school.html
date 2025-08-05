@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Create Study Plan - MyNewsletter AI{% endblock %}
+
+{% block content %}
+<div class="theme-school" x-data="schoolBuilder()">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] text-center py-3 px-4">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="min-h-screen flex items-center justify-center px-4">
+    <div class="w-full max-w-xl relative">
+
+      <!-- Dynamic Step Title -->
+      <h1 class="heading-1 text-center mb-4" x-text="stepTitles[step]"></h1>
+        <div x-show="errorMessage" x-transition class="bg-red-100 text-red-800 text-sm text-center px-4 py-2 rounded mb-4">
+          <span x-text="errorMessage"></span>
+        </div>
+
+      <!-- Step 0: Mode Select -->
+      <div x-show="step === 'mode'" x-cloak>
+        <p class="subheading text-center mb-8">How would you like to start?</p>
+        <div class="grid grid-cols-1 gap-6">
+          <div @click="selectMode('manual')" class="bg-box section-hover cursor-pointer p-6 text-center">
+            <h2 class="heading-2 mb-2">Manual Entry</h2>
+            <p class="body-text text-sm text-[var(--color-muted)]">Fill out your course information manually.</p>
+          </div>
+          <div class="bg-box section-hover p-6 text-center">
+            <h2 class="heading-2 mb-2">Upload Syllabus</h2>
+            <p class="body-text text-sm text-[var(--color-muted)] mb-4">Upload a syllabus and we'll extract topics.</p>
+            <form action="/upload-syllabus"
+                  method="POST"
+                  enctype="multipart/form-data"
+                  class="space-y-3"
+                  @submit="isUploading = true">
+              <input type="file" name="syllabus" accept=".pdf,.docx" class="w-full border border-[var(--color-border)] rounded p-2" required>
+              <div class="flex items-center gap-2">
+                <input type="checkbox" name="date_sync" id="date_sync" class="h-4 w-4 text-[var(--color-accent)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-highlight)]">
+                <label for="date_sync" class="text-sm text-[var(--color-text)]">Enable Date Sync — Align newsletters with class schedule topics</label>
+              </div>
+              <button type="submit"
+                      :disabled="isUploading"
+                      class="btn-primary w-full flex items-center justify-center relative">
+                <svg x-show="isUploading" class="animate-spin h-5 w-5 mr-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                <span x-text="isUploading ? 'Uploading...' : 'Upload & Continue'"></span>
+              </button>
+            </form>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Main Form Steps -->
+      <form x-show="step !== 'mode'" method="POST" action="/create-school-newsletter" enctype="multipart/form-data" class="space-y-6 relative min-h-[300px]" x-cloak>
+        <!-- Progress Bar -->
+        <div class="flex items-center justify-between mb-6">
+          <template x-for="(label, index) in stepOrder" :key="index">
+            <div
+              :class="currentIndex() >= index ? 'bg-[var(--color-accent)]' : 'bg-gray-300'"
+              class="flex-1 h-2 mx-1 rounded transition-all duration-300 ease-in-out">
+            </div>
+          </template>
+        </div>
+
+        <!-- Step 1: Course Name -->
+        <div x-show="step === 'course'" x-cloak>
+          <label for="course_name" class="subheading mb-2 block">Course Name</label>
+          <input type="text" id="course_name" name="course_name" x-model="prefilledCourse" class="w-full border border-[var(--color-border)] rounded p-2">
+          <div class="mt-4 flex justify-between">
+            <button type="button" @click="step = 'mode'" class="btn-outline">Back</button>
+            <button type="button" @click="nextStep()" class="btn-primary ml-auto">Next</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Topics -->
+        <div x-show="step === 'topics'" x-cloak>
+          <label for="topics" class="subheading mb-2 block">Topics / Syllabus Summary</label>
+          <textarea id="topics" name="topics" rows="5" x-model="prefilledTopics" class="w-full border border-[var(--color-border)] rounded p-2"></textarea>
+          <div class="mt-4 flex justify-between">
+            <button type="button" @click="step = 'course'" class="btn-outline">Back</button>
+            <button type="button" @click="nextStep()" class="btn-primary">Next</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Content Types -->
+        <div x-show="step === 'content'" x-cloak>
+          <label class="subheading mb-2 block">Include in Emails</label>
+          <div class="grid grid-cols-2 gap-3">
+            {% for option in ['summary', 'example', 'quiz', 'flashcards'] %}
+            <label class="inline-flex items-center">
+              <input type="checkbox" name="content_types" value="{{ option }}" class="form-checkbox h-5 w-5 text-[var(--color-accent)]">
+              <span class="ml-2 capitalize">{{ option.replace('_', ' ') }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="mt-4 flex justify-between">
+            <button type="button" @click="step = 'topics'" class="btn-outline">Back</button>
+            <button type="button" @click="nextStep()" class="btn-primary">Next</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Schedule & Email -->
+        <div x-show="step === 'final'" x-cloak>
+          <label for="frequency" class="subheading mb-2 block">Delivery Frequency</label>
+          <select id="frequency" name="frequency" class="w-full border border-[var(--color-border)] rounded p-2 mb-1">
+            <option value="">-- Select Frequency --</option>
+            <option value="daily">Daily</option>
+            <option value="bidaily">Every Other Day</option>
+            <option value="weekly">Weekly</option>
+          </select>
+
+          <label for="email" class="subheading mt-4 mb-2 block">Your Email</label>
+          <input type="email" id="email" name="email" class="w-full border border-[var(--color-border)] rounded p-2">
+
+          <div class="mt-4 flex justify-between">
+            <button type="button" @click="step = 'content'" class="btn-outline">Back</button>
+            <button type="submit" class="btn-primary">Generate Plan</button>
+          </div>
+        </div>
+
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function schoolBuilder() {
+  return {
+    step: '{{ 'course' if extracted_topics else 'mode' }}',
+    mode: '{{ 'manual' if extracted_topics else '' }}',
+    prefilledCourse: '{{ syllabus_course_name }}',
+    prefilledTopics: `{{ extracted_topics | join('\n') if extracted_topics else '' }}`,
+    errorMessage: '',
+    isUploading: false,
+    stepOrder: ['course', 'topics', 'content', 'final'],
+    stepTitles: {
+      'mode': 'Create Your Study Plan',
+      'course': 'Step 1: Course Name',
+      'topics': 'Step 2: Topics',
+      'content': 'Step 3: Content Types',
+      'final': 'Step 4: Schedule & Email'
+    },
+    currentIndex() {
+      return this.stepOrder.indexOf(this.step);
+    },
+        nextStep() {
+          const idx = this.stepOrder.indexOf(this.step);
+
+          this.errorMessage = '';  // Clear previous errors
+
+          if (this.step === 'course' && !this.prefilledCourse.trim()) {
+            this.errorMessage = 'Please enter a course name before continuing.';
+            return;
+          }
+
+          if (this.step === 'topics' && !this.prefilledTopics.trim()) {
+            this.errorMessage = 'Please enter at least one topic before continuing.';
+            return;
+          }
+
+          if (this.step === 'content') {
+            const selectedContent = [...document.querySelectorAll('input[name=\"content_types\"]:checked')];
+            if (selectedContent.length === 0) {
+              this.errorMessage = 'Please select at least one content type before continuing.';
+              return;
+            }
+          }
+
+          if (idx < this.stepOrder.length - 1) {
+            this.step = this.stepOrder[idx + 1];
+          }
+        },
+
+        selectMode(selectedMode) {
+          this.mode = selectedMode;
+          this.step = 'course';
+        },
+  }
+}
+</script>
+
+<style>
+        [x-cloak] { display: none !important; }
+
+        .theme-school input:focus,
+        .theme-school select:focus,
+        .theme-school textarea:focus {
+          --tw-ring-color: var(--color-accent);
+          border-color: var(--color-accent);
+        }
+</style>
+
+
+{% endblock %}

@@ -8,16 +8,15 @@
   <p class="subheading mb-10">Upgrade or downgrade your plan as needed.</p>
 
   <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
-
     <!-- Free Plan -->
-    <div class="bg-white rounded-xl shadow hover:shadow-xl transition-shadow duration-300 p-8 flex flex-col items-center border-2 {% if current_plan == 'free' %}border-green-400{% else %}border-gray-200{% endif %}">
-      <h2 class="heading-2 mb-2 text-green-600">Free</h2>
-      <p class="text-sm text-gray-500 mb-2">For beginners or testing</p>
-      <p class="text-3xl font-bold mb-2">$0<span class="text-lg font-normal">/mo</span></p>
+    <div class="bg-white rounded-2xl shadow-md hover:shadow-xl transition p-8 flex flex-col items-center border-2 {% if current_plan == 'free' %}border-[var(--color-accent)]{% else %}border-gray-200{% endif %} hover:bg-gray-50">
+      <h2 class="heading-2 mb-2 text-[var(--color-text)]">Free</h2>
+      <p class="text-sm text-[var(--color-muted)] mb-2">For beginners or testing</p>
+      <p class="text-3xl font-bold mb-2 text-[var(--color-text)]">$0<span class="text-lg font-normal">/mo</span></p>
 
       {% if session['user_id'] %}
         {% if current_plan == 'free' %}
-          <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full mb-2">Your Plan</span>
+          <span class="text-xs bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] px-2 py-1 rounded-full mb-2">Your Plan</span>
           <button class="btn-outline w-full opacity-50 cursor-not-allowed" disabled>You're on this plan</button>
         {% else %}
           <a href="/stripe-portal" class="btn-outline w-full text-center">Downgrade Plan</a>
@@ -25,8 +24,6 @@
       {% else %}
         <a href="/register" class="btn-primary w-full text-center">Create Account</a>
       {% endif %}
-
-
 
       <ul class="body-text mt-6 space-y-2 text-center">
         <li>• 1 total newsletter</li>
@@ -36,15 +33,15 @@
     </div>
 
     <!-- Plus Plan -->
-    <div class="bg-white rounded-xl shadow hover:shadow-xl transition-shadow duration-300 p-8 flex flex-col items-center border-2 {% if current_plan == 'plus' %}border-blue-500{% else %}border-gray-200{% endif %} relative">
-      <span class="absolute top-0 left-0 bg-blue-600 text-white text-xs px-3 py-1 rounded-br-xl">Most Popular</span>
-      <h2 class="heading-2 mb-2 text-blue-600">Plus</h2>
-      <p class="text-sm text-gray-500 mb-2">For solo creators</p>
-      <p class="text-3xl font-bold mb-2">$5<span class="text-lg font-normal">/mo</span></p>
+    <div class="bg-white rounded-2xl shadow-md hover:shadow-xl transition p-8 flex flex-col items-center border-2 {% if current_plan == 'plus' %}border-[var(--color-accent)]{% else %}border-gray-200{% endif %} relative hover:bg-gray-50">
+      <span class="absolute top-0 left-0 bg-[var(--color-accent)] text-white text-xs px-3 py-1 rounded-br-xl">Most Popular</span>
+      <h2 class="heading-2 mb-2 text-[var(--color-text)]">Plus</h2>
+      <p class="text-sm text-[var(--color-muted)] mb-2">For solo creators</p>
+      <p class="text-3xl font-bold mb-2 text-[var(--color-text)]">$5<span class="text-lg font-normal">/mo</span></p>
 
       {% if session['user_id'] %}
         {% if current_plan == 'plus' %}
-          <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full mb-2">Your Plan</span>
+          <span class="text-xs bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] px-2 py-1 rounded-full mb-2">Your Plan</span>
           <a href="/stripe-portal" class="btn-outline w-full text-center">Manage Subscription</a>
         {% elif current_plan == 'free' %}
           <button onclick="openModal('upgrade_plus')" class="btn-primary w-full text-center">Upgrade to Plus</button>
@@ -55,23 +52,22 @@
         <a href="/register" class="btn-primary w-full text-center">Create Account</a>
       {% endif %}
 
-
       <ul class="body-text mt-6 space-y-2 text-center">
-        <li>• Unlimited total newsletters</li>
+        <li>• 3 total newsletters</li>
         <li>• 1 active newsletter at a time</li>
         <li>• Priority support</li>
       </ul>
     </div>
 
     <!-- Pro Plan -->
-    <div class="bg-white rounded-xl shadow hover:shadow-xl transition-shadow duration-300 p-8 flex flex-col items-center border-2 {% if current_plan == 'pro' %}border-yellow-500{% else %}border-gray-200{% endif %}">
-      <h2 class="heading-2 mb-2 text-yellow-600">Pro</h2>
-      <p class="text-sm text-gray-500 mb-2">For power users</p>
-      <p class="text-3xl font-bold mb-2">$15<span class="text-lg font-normal">/mo</span></p>
+    <div class="bg-white rounded-2xl shadow-md hover:shadow-xl transition p-8 flex flex-col items-center border-2 {% if current_plan == 'pro' %}border-[var(--color-accent)]{% else %}border-gray-200{% endif %} hover:bg-gray-50">
+      <h2 class="heading-2 mb-2 text-[var(--color-text)]">Pro</h2>
+      <p class="text-sm text-[var(--color-muted)] mb-2">For power users</p>
+      <p class="text-3xl font-bold mb-2 text-[var(--color-text)]">$15<span class="text-lg font-normal">/mo</span></p>
 
       {% if session['user_id'] %}
         {% if current_plan == 'pro' %}
-          <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full mb-2">Your Plan</span>
+          <span class="text-xs bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] px-2 py-1 rounded-full mb-2">Your Plan</span>
           <a href="/stripe-portal" class="btn-outline w-full text-center">Manage Subscription</a>
         {% elif current_plan == 'free' %}
           <button onclick="openModal('upgrade_pro')" class="btn-primary w-full text-center">Upgrade to Pro</button>
@@ -91,13 +87,11 @@
   </div>
 </section>
 
-
-
 <!-- 🔔 Confirmation Modal -->
 <div id="confirmModal" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden">
   <div class="bg-white p-8 rounded-xl shadow-xl max-w-md text-center space-y-4">
-    <h2 class="text-xl font-semibold">Confirm Plan Change</h2>
-    <p id="modalText" class="text-gray-600 text-sm"></p>
+    <h2 class="text-xl font-semibold text-[var(--color-text)]">Confirm Plan Change</h2>
+    <p id="modalText" class="text-[var(--color-muted)] text-sm"></p>
     <div class="flex justify-center gap-4 mt-6">
       <button onclick="closeModal()" class="btn-outline">Cancel</button>
       <a id="confirmButton" href="#" class="btn-primary">Confirm</a>

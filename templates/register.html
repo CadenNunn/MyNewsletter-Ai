@@ -3,13 +3,12 @@
 {% block title %}Register - MyNewsletter AI{% endblock %}
 
 {% block content %}
-
 <!-- Registration Form -->
-<section class="py-20 bg-gray-50 min-h-screen flex items-center justify-center px-4">
+<section class="py-20 bg-[var(--color-bg)] min-h-screen flex items-center justify-center px-4">
   <div 
     x-data="{ success: false }" 
     x-init="if ({{ 'true' if 'Account created' in get_flashed_messages()|join(' ') else 'false' }}) success = true"
-    class="bg-white p-8 rounded-xl shadow-xl hover:shadow-2xl transition duration-300 border border-gray-200 w-full max-w-md relative"
+    class="bg-[var(--color-card)] p-8 rounded-xl shadow-xl hover:shadow-2xl transition duration-300 border border-[var(--color-border)] w-full max-w-md relative"
   >
     <!-- ✅ Success Checkmark -->
     <div 
@@ -35,12 +34,13 @@
     {% endwith %}
 
     <form method="POST" class="space-y-5" x-data="{ password: '', confirm: '' }">
+      <!-- Email -->
       <div>
         <label class="block text-sm font-medium mb-1">Email</label>
         <div class="relative">
-          <input type="email" name="email" required class="w-full px-4 py-2 pl-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <span class="absolute left-3 top-2.5 text-gray-400">
-            <!-- ✅ Correct Heroicon: Envelope -->
+          <input type="email" name="email" required class="w-full px-4 py-2 pl-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-btn)]">
+          <span class="absolute left-3 top-2.5 text-[var(--color-muted)]">
+            <!-- Envelope -->
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
@@ -48,6 +48,7 @@
         </div>
       </div>
 
+      <!-- Password -->
       <div>
         <label class="block text-sm font-medium mb-1">Password</label>
         <div class="relative">
@@ -57,10 +58,10 @@
             name="password"
             required
             x-model="password"
-            class="w-full px-4 py-2 pl-10 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="w-full px-4 py-2 pl-10 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-btn)]"
           />
-          <span class="absolute left-3 top-2.5 text-gray-400">
-            <!-- Heroicon: Lock Closed -->
+          <span class="absolute left-3 top-2.5 text-[var(--color-muted)]">
+            <!-- Lock -->
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c.552 0 1 .448 1 1v3a1 1 0 11-2 0v-3c0-.552.448-1 1-1z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8V6a5 5 0 00-10 0v2m12 0H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2v-8a2 2 0 00-2-2z" />
@@ -69,7 +70,7 @@
           <button
             type="button"
             onclick="togglePassword('password', 'eyeSlash1')"
-            class="absolute inset-y-0 right-2 flex items-center text-gray-500"
+            class="absolute inset-y-0 right-2 flex items-center text-[var(--color-muted)]"
           >
             <svg id="eyeIcon1" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -78,13 +79,14 @@
             </svg>
           </button>
         </div>
-        <p class="text-xs mt-1 text-gray-500" x-text="
+        <p class="text-xs mt-1 text-[var(--color-muted)]" x-text="
           password.length >= 10 ? 'Strength: Strong' :
           password.length >= 6 ? 'Strength: Medium' :
           password.length > 0 ? 'Strength: Weak' : ''
         "></p>
       </div>
 
+      <!-- Confirm Password -->
       <div>
         <label class="block text-sm font-medium mb-1">Confirm Password</label>
         <div class="relative">
@@ -94,10 +96,10 @@
             name="confirm_password"
             required
             x-model="confirm"
-            class="w-full px-4 py-2 pl-10 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="w-full px-4 py-2 pl-10 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-btn)]"
           />
-          <span class="absolute left-3 top-2.5 text-gray-400">
-            <!-- Heroicon: Lock Closed -->
+          <span class="absolute left-3 top-2.5 text-[var(--color-muted)]">
+            <!-- Lock -->
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c.552 0 1 .448 1 1v3a1 1 0 11-2 0v-3c0-.552.448-1 1-1z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8V6a5 5 0 00-10 0v2m12 0H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2v-8a2 2 0 00-2-2z" />
@@ -106,7 +108,7 @@
           <button
             type="button"
             onclick="togglePassword('confirm_password', 'eyeSlash2')"
-            class="absolute inset-y-0 right-2 flex items-center text-gray-500"
+            class="absolute inset-y-0 right-2 flex items-center text-[var(--color-muted)]"
           >
             <svg id="eyeIcon2" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -120,12 +122,13 @@
         "></p>
       </div>
 
+      <!-- Submit -->
       <button type="submit" class="btn-primary w-full text-center">Register</button>
     </form>
 
-    <p class="mt-4 text-center text-sm text-gray-500">
+    <p class="mt-4 text-center text-sm text-[var(--color-muted)]">
       Already have an account?
-      <a href="/login" class="text-blue-600 hover:underline">Log in</a>
+      <a href="/login" class="text-[var(--color-accent)] hover:underline">Log in</a>
     </p>
   </div>
 </section>
@@ -139,5 +142,4 @@
     slash.classList.toggle("hidden", !isHidden);
   }
 </script>
-
 {% endblock %}
