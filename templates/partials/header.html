@@ -1,7 +1,12 @@
 <header class="bg-[var(--color-card)] shadow-md py-5" x-data="{ navOpen: false }">
   <div class="max-w-6xl mx-auto px-4 flex items-center justify-between">
     <!-- Logo -->
-    <a href="/" class="text-2xl font-bold text-[var(--color-accent)]">MyNewsletter AI</a>
+    <a href="/" class="flex items-center gap-2">
+      <img src="{{ url_for('static', filename='logo.png') }}" 
+           alt="StudySynth Logo" 
+           class="h-8 w-8 object-contain">
+      <span class="text-2xl font-bold text-[var(--color-accent)]"> Memoraid </span>
+    </a>
 
     <!-- Hamburger Toggle -->
     <button class="md:hidden text-[var(--color-text)] focus:outline-none" @click="navOpen = !navOpen">
@@ -18,7 +23,9 @@
     <!-- Desktop Nav -->
     <div class="hidden md:flex items-center gap-6 ml-auto">
       <a href="/pricing" class="text-base text-[var(--color-muted)] hover:text-[var(--color-accent)] transition">Pricing</a>
-      <a href="/reviews" class="text-base text-[var(--color-muted)] hover:text-[var(--color-accent)] transition">Reviews</a>
+      {% if session['user_id'] %}
+        <a href="/reviews" class="text-base text-[var(--color-muted)] hover:text-[var(--color-accent)] transition">Reviews</a>
+      {% endif %}
 
       {% if session['user_id'] %}
         <!-- Avatar Dropdown -->
@@ -61,7 +68,9 @@
     x-transition:leave-end="opacity-0 transform scale-y-90"
   >
     <a href="/pricing" class="block text-[var(--color-muted)] hover:text-[var(--color-accent)] text-base">Pricing</a>
-    <a href="/reviews" class="block text-[var(--color-muted)] hover:text-[var(--color-accent)] text-base">Reviews</a>
+    {% if session['user_id'] %}
+      <a href="/reviews" class="block text-[var(--color-muted)] hover:text-[var(--color-accent)] text-base">Reviews</a>
+    {% endif %}
 
     {% if session['user_id'] %}
       <a href="/dashboard" class="block text-[var(--color-muted)] hover:text-[var(--color-accent)] text-base">Dashboard</a>

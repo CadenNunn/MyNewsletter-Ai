@@ -11,7 +11,7 @@ def extract_syllabus_title_and_topics(raw_text):
     You are a helpful assistant. Here is a syllabus text. Extract the following:
 
     1. The Course Title (keep it short and clean).
-    2. A list of 10-20 distinct course topics the class will cover.
+    2. A list of distinct course topics covered or implied by the material. The topics should not be vague or overly simple. They should be core topics of document submitted. If all of these topics where to be reviewed, the user should be able to ace any question in regards to any of the topics. Try to find at least 10 topics, but quality should be preserved over quantity.
     3. A date-to-topic mapping if specific class dates are mentioned. Use the date as the key (YYYY-MM-DD format), and the topic as the value.
        - Example: "2025-08-24": "World War II"
        - Only include mappings where a date and topic are clearly associated.

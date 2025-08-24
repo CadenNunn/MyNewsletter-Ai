@@ -6,6 +6,23 @@ import json
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+def generate_subject_line(topic, course_name):
+    """Generate a short, engaging subject line for the given topic."""
+    prompt = f"""
+Generate a short, engaging email subject line for a study email in the course "{course_name}".
+The email focuses on the topic: "{topic}".
+It should be concise, clear, and intriguing for a college-level student.
+Use curiosity, challenge, or action phrasing (e.g., "Mastering...", "Can you solve...", "Crack the code on...").
+Return only the subject line text with no quotes, punctuation at the end, or extra words.
+"""
+    response = client.chat.completions.create(
+        model="gpt-4",  # OK; you can switch to "gpt-4o-mini" for cheaper subject lines
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.6
+    )
+    return response.choices[0].message.content.strip()
+
+
 def write_study_email(
     course_name,
     topics,
@@ -26,9 +43,9 @@ Avoid repeating any ideas, questions, or examples already written for this cours
     section_descriptions = {
         "summary": "- Write a focused summary of the key idea, assuming the student has already encountered the material. Use clear, intelligent phrasing that reinforces understanding rather than teaching from scratch.",
         "example": "- Provide a detailed, creative real-life analogy or scenario that helps clarify the concept. Avoid academic jargon—this should feel vivid, relatable, and memorable.",
-        "quiz": "- Create 5 challenging multiple-choice questions that test understanding of the topic. Include answers below the questions in a clear answer key format.",
-        "flashcards": "- Generate a list of flashcards (term/definition or Q&A format) focusing on core facts, keywords, or ideas that are essential for recall and review.",
-        "suggested reading": "- Recommend 2–3 high-quality online resources (articles or videos) that go deeper into the topic. Include 1-line summaries for each."
+        "quiz": "- Create 5 challenging multiple-choice questions. At least 2 should involve application or reasoning (not pure recall). Include an Answer Key with brief rationales.",
+        "flashcards": "- Generate 5 flashcards in 'Front — Back' format focusing on core facts, keywords, or ideas essential for recall. Do not repeat quiz items; make them complementary.",
+        "suggested reading": "- Recommend 2–3 realistic resources (e.g., textbook chapter, 'Khan Academy article on ...', 'CrashCourse video on ...'). Do not fabricate URLs; provide titles/descriptions only."
     }
 
     requested_blocks = "\n".join([
@@ -69,10 +86,10 @@ Use this structure:
 <p>A1...</p>
 
 <h2>Flashcards</h2>
-<p>Term: ...<br>Definition: ...</p>
+<p>Front — Back</p>
 
 <h2>Suggested Reading</h2>
-<p><a href='URL'>Title</a> — 1 sentence summary</p>
+<p>Resource Title — 1 sentence summary</p>
 
 <h2>Conclusion</h2>
 <p>Brief motivational outro and recap.</p>
@@ -80,7 +97,7 @@ Use this structure:
 {past_note}
 
 Requirements:
-- Include only the content types the user selected.
+- Include only the content types the user selected; DO NOT include sections the user did not select.
 - Write with a confident, encouraging, and thoughtful tone.
 - Prioritize relevance, depth, and usefulness. Don’t oversimplify.
 - Return clean, valid HTML using only <h1>, <h2>, and <p> tags.
@@ -89,9 +106,18 @@ Requirements:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4",  # For higher quality you can use "gpt-4o"; keep as-is if you prefer
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7
     )
 
-    return response.choices[0].message.content.strip()
+    # --- Light QA: strip rogue code fences/overruns and cap length ---
+    raw_html = response.choices[0].message.content.strip()
+    if raw_html.startswith("```"):
+        raw_html = raw_html.strip("`").strip()
+    if "```" in raw_html:
+        raw_html = raw_html.split("```")[0]
+    if len(raw_html) > 15000:
+        raw_html = raw_html[:15000] + "\n<p>[Content trimmed]</p>"
+
+    return raw_html

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}MyNewsletter AI – Built for Students{% endblock %}
+{% block title %} Memoraid – Built for Students{% endblock %}
 
 {% block content %}
 
@@ -11,7 +11,7 @@
 <script>
   document.addEventListener('alpine:init', () => {
     Alpine.data('typewriter', () => ({
-      texts: ["Built for students.", "Curated by AI.", "Smarter every week."],
+      texts: ["Cramming", "Falling Behind", "Exhausting Exams", "Endless Notes"],
       currentText: '',
       currentIndex: 0,
       isDeleting: false,
@@ -75,60 +75,182 @@
 
 
 <!-- Hero Section with Black to Purple to White Gradient -->
-<section class="relative min-h-screen flex flex-col justify-center items-center text-center px-6"
-         style="background: linear-gradient(to bottom, #000000 0%, #6366F1 50%, white 100%);">
+<section class="relative flex flex-col justify-center items-center text-center px-6 pt-24"
+         style="background: linear-gradient(to bottom, #000000 0%, #6366F1 50%, white 100%); min-height:100vh; margin-top:0;">
+
          
-    <!-- Top Nav Overlay -->
-    <div class="absolute top-0 left-0 right-0 flex justify-between items-center px-6 py-5 max-w-6xl mx-auto">
-        <a href="/" class="text-2xl font-bold text-white">MyNewsletter AI</a>
-        <a href="/login" class="text-white text-base font-medium hover:underline">Log In</a>
-    </div>
+        <!-- Sticky Header / Nav -->
+        <header x-data="{ open:false }" class="z-50">
+            <!-- Mobile: logo-only toggle in top-right, no bar -->
+            <div class="md:hidden">
+                <button
+                    @click="open = !open"
+                    class="fixed top-4 right-4 rounded-full p-1 backdrop-blur-md"
+                    aria-label="Open menu"
+                    :aria-expanded="open"
+                >
+                    <img src="{{ url_for('static', filename='logo.png') }}"
+                         alt="StudySynth Logo"
+                         class="h-8 w-8 object-contain">
+                </button>
+
+                <!-- Simple dropdown with the same links -->
+                <div
+                    x-show="open"
+                    x-transition
+                    @click.outside="open=false"
+                    class="fixed top-16 right-4 w-44 rounded-xl bg-black/90 backdrop-blur-md border border-white/10 shadow-2xl overflow-hidden"
+                >
+                    <a href="/login"
+                       @click="open=false"
+                       class="block px-4 py-3 text-sm text-white/90 hover:bg-white/10 transition">
+                        Log In
+                    </a>
+                    <a href="/register"
+                       @click="open=false"
+                       class="block px-4 py-3 text-sm font-semibold bg-white text-black hover:brightness-95 transition">
+                        Get Started
+                    </a>
+                </div>
+            </div>
+
+            <!-- Desktop/Laptop: original header with bar -->
+            <div class="hidden md:block">
+                <div class="fixed top-0 left-0 right-0 bg-black/40 backdrop-blur-md">
+                    <div class="max-w-6xl mx-auto flex justify-between items-center px-6 py-4">
+                        <!-- Logo -->
+                        <a href="/" class="flex items-center gap-2">
+                            <img src="{{ url_for('static', filename='logo.png') }}" 
+                                 alt="StudySynth Logo" 
+                                 class="h-8 w-8 object-contain">
+                            <span class="text-white font-bold text-xl"> Memoraid </span>
+                        </a>
+
+                        <!-- Nav Links -->
+                        <div class="flex items-center gap-6">
+                            <a href="/login" class="text-white/80 hover:text-white transition">Log In</a>
+                            <a href="/register" class="bg-white text-black font-semibold px-4 py-2 rounded-full shadow hover:shadow-lg transition">
+                                Get Started
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
 
     <!-- Main Hero Content -->
-    <div class="relative z-10 max-w-3xl mt-20">
-        <h1 class="text-4xl sm:text-6xl font-extrabold text-white leading-tight mb-6">
-            Automate Your Study Plan in Minutes
-        </h1>
-        <p class="text-lg sm:text-xl text-indigo-100 mb-8">
-            Upload your syllabus and get AI-curated notes, quizzes, and flashcards sent to your inbox weekly.
-        </p>
-        <a href="/choose-newsletter-type" class="inline-block bg-white text-[#6366F1] text-lg font-semibold px-8 py-3 rounded-full shadow-md hover:shadow-lg transition">
-            Create Your First Newsletter →
-        </a>
+    <div class="relative z-10 max-w-6xl mx-auto mt-20 flex flex-col lg:flex-row items-center justify-between gap-12">
+        
+        <!-- Left Side: Text -->
+        <div class="flex-1 text-center lg:text-left">
+            <h1 class="text-4xl sm:text-6xl font-extrabold text-white leading-tight mb-6">
+                Say Goodbye to 
+                <!-- Typewriter word: layered (shadow + gradient) to avoid stroke artifacts -->
+                <span x-data="typewriter" x-init="init()" 
+                      class="relative inline-block align-baseline min-w-[13ch] h-[1em] leading-none">
+
+                    <!-- Shadow/outline layer (behind) -->
+                    <span 
+                        x-text="currentText"
+                        class="absolute inset-0 text-black opacity-80 select-none"
+                        aria-hidden="true"
+                        style="text-shadow: -1px -1px 0 rgba(0,0,0,0.9),
+                                         1px -1px 0 rgba(0,0,0,0.9),
+                                        -1px  1px 0 rgba(0,0,0,0.9),
+                                         1px  1px 0 rgba(0,0,0,0.9);">
+                    </span>
+                    <!-- Gradient fill layer (front) -->
+                    <span 
+                        x-text="currentText"
+                        class="relative bg-gradient-to-r from-indigo-300 to-indigo-100 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(99,102,241,0.35)]">
+                    </span>
+                </span>
+            </h1>
+
+            <p class="text-lg sm:text-xl text-indigo-100 mb-8">
+                No more falling behind- focus on learning, not stressing.
+            </p>
+
+            <!-- CTA -->
+            <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+                <a href="/register" class="bg-white text-[#6366F1] text-lg font-semibold px-8 py-3 rounded-full shadow-md hover:shadow-lg transition">
+                    Get Started Free →
+                </a>
+            </div>
+
+        </div>
+
+        <!-- Right Side: Visual (swap when ready) -->
+        <div class="flex-1 flex justify-center lg:justify-end">
+            <img src="https://cdn-icons-png.flaticon.com/512/3135/3135755.png" 
+                 alt="Student studying illustration" 
+                 class="w-72 lg:w-96 drop-shadow-2xl">
+        </div>
     </div>
+
 </section>
 
 
 <!-- Trusted By Students Section -->
+
 <section class="bg-white py-24 px-6 text-center">
     <div class="max-w-5xl mx-auto">
         <p class="text-sm uppercase tracking-widest text-gray-500 mb-4">
-            Trusted by Students Across High Schools and Colleges
+            Built for Busy College Students
         </p>
         <h2 class="text-3xl sm:text-4xl font-extrabold text-gray-900 leading-snug mb-10">
-            Turn Your Syllabus into Weekly Notes, Quizzes, and Flashcards.
+            Turn Your Notes into a Study System That Works.
         </h2>
-    </div>
-</section>  
 
-<!-- Full-Width Staggered Image Showcase -->
-<section class="bg-white py-20">
-    <div class="w-full flex flex-wrap justify-center items-start gap-16 max-w-6xl mx-auto px-6">
-
-        <!-- Left Column -->
-        <div class="flex flex-col gap-16">
-            <img src="https://i.ibb.co/jPQcrd0L/Screenshot-2025-08-04-at-10-11-05-PM.png" alt="Screenshot 1" class="w-[400px] rounded-2xl shadow-xl">
-            <img src="https://i.ibb.co/Ngk7vcMk/Screenshot-2025-08-04-at-10-15-00-PM.png" alt="Screenshot 3" class="w-[400px] rounded-2xl shadow-xl">
-        </div>
-
-        <!-- Middle Column -->
-        <div class="flex flex-col gap-16 mt-32">
-            <img src="https://i.ibb.co/Mx8rp1T8/Screenshot-2025-08-04-at-10-11-32-PM.png" alt="Screenshot 2" class="w-[400px] rounded-2xl shadow-xl">
-            <img src="https://i.ibb.co/9mB9jVpj/Screenshot-2025-08-04-at-10-15-28-PM.png" alt="Screenshot 4" class="w-[400px] rounded-2xl shadow-xl">
+        <!-- Logo Strip -->
+        <div class="flex flex-wrap justify-center items-center gap-10 opacity-80">
+            <img src="https://i.ibb.co/hR2YgMDh/Tech-logo.jpg" 
+                 alt="Texas Tech University" 
+                 class="h-12 object-contain">
+            <img src="https://i.ibb.co/GQGvtpDP/NMSU.jpg" 
+                 alt="New Mexico State University" 
+                 class="h-12 object-contain">
+            <img src="https://i.ibb.co/Vcr3QyyF/LCU.webp" 
+                 alt="Lubbock Christian University" 
+                 class="h-12 object-contain">
         </div>
     </div>
 </section>
 
+
+<!-- Product Visuals: Strong Stagger -->
+<section class="bg-white py-20">
+  <div class="max-w-7xl mx-auto px-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+
+      <!-- 1) Upload Methods -->
+      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mt-16">
+        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Upload: Manual • Documents • Syllabus</span>
+        <img src="https://i.ibb.co/vvwQdMjZ/Screenshot-2025-08-21-at-12-01-27-PM.png" alt="Upload options" class="w-full h-auto object-contain rounded-xl">
+      </figure>
+
+      <!-- 2) Email Content Selection -->
+      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mb-16">
+        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Choose Email Content</span>
+        <img src="https://i.ibb.co/N2gpVWpr/Screenshot-2025-08-21-at-12-02-29-PM.png" alt="Email content selection" class="w-full h-auto object-contain rounded-xl">
+      </figure>
+
+      <!-- 3) Dashboard -->
+      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mt-24">
+        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Dashboard</span>
+        <img src="https://i.ibb.co/chq1zNwh/Screenshot-2025-08-21-at-12-03-30-PM.png" alt="Dashboard" class="w-full h-auto object-contain rounded-xl">
+      </figure>
+
+      <!-- 4) Example Email -->
+      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mb-24">
+        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Example Email</span>
+        <img src="https://i.ibb.co/1f34D0Lz/Screenshot-2025-08-21-at-12-04-46-PM.png" alt="Example email" class="w-full h-auto object-contain rounded-xl">
+      </figure>
+
+    </div>
+  </div>
+</section>
 
 
 
@@ -139,78 +261,82 @@
 <section class="relative py-20 w-screen flex flex-col justify-center items-center text-center px-6 overflow-hidden"
          style="background: linear-gradient(to bottom, white 0%, #6366F1 50%, #000000 100%);">
 
-    <h2 class="text-4xl sm:text-5xl font-bold mb-12 text-gray-900">
+    <h2 class="text-4xl sm:text-5xl font-bold mb-4 text-gray-900">
         Designed for Effortless Learning
     </h2>
+    <p class="text-lg text-gray-700 mb-12 max-w-2xl">
+        Everything you need to stay on top of your classes — automated by AI.
+    </p>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-6xl">
         <!-- Feature Card 1 -->
-        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform">
+        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform text-white">
             <div class="flex justify-center items-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-indigo-300 drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
             </div>
             <h3 class="text-xl font-semibold mb-2">Upload Syllabus</h3>
-            <p class="text-sm text-gray-300">Start by uploading your syllabus—AI handles the rest.</p>
+            <p class="text-sm text-indigo-100">Upload once. We break your course into bite-sized study sessions so you never feel lost.</p>
         </div>
 
         <!-- Feature Card 2 -->
-        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform">
+        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform text-white">
             <div class="flex justify-center items-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-indigo-300 drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
             </div>
             <h3 class="text-xl font-semibold mb-2">Custom Study Plans</h3>
-            <p class="text-sm text-gray-300">AI-curated content aligned with your weekly class topics.</p>
+            <p class="text-sm text-indigo-100">Get everything in one place: notes, examples, a quiz, and flashcards—delivered on schedule.</p>
         </div>
 
         <!-- Feature Card 3 -->
-        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform">
+        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform text-white">
             <div class="flex justify-center items-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-indigo-300 drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2a4 4 0 014-4h4"/>
                 </svg>
             </div>
             <h3 class="text-xl font-semibold mb-2">Auto-generated Quizzes</h3>
-            <p class="text-sm text-gray-300">Practice tests sent to your inbox to track progress.</p>
+            <p class="text-sm text-indigo-100">Practice tests sent to your inbox to track progress.</p>
         </div>
 
         <!-- Feature Card 4 -->
-        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform">
+        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform text-white">
             <div class="flex justify-center items-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-indigo-300 drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                 </svg>
             </div>
-            <h3 class="text-xl font-semibold mb-2">Weekly Recap Emails</h3>
-            <p class="text-sm text-gray-300">Summarized notes, quizzes, and flashcards every week.</p>
+            <h3 class="text-xl font-semibold mb-2">Date Sync</h3>
+            <p class="text-sm text-indigo-100">Match study topics to your actual class dates—stay in lockstep with your syllabus.</p>
         </div>
 
         <!-- Feature Card 5 -->
-        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform">
+        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform text-white">
             <div class="flex justify-center items-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-indigo-300 drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16l4-4-4-4m8 8l-4-4 4-4"/>
                 </svg>
             </div>
             <h3 class="text-xl font-semibold mb-2">Flashcards for Review</h3>
-            <p class="text-sm text-gray-300">Study key terms and concepts on the go with flashcards.</p>
+            <p class="text-sm text-indigo-100">Study key terms and concepts on the go with flashcards.</p>
         </div>
 
         <!-- Feature Card 6 -->
-        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform">
+        <div class="bg-white/10 border border-white/20 rounded-2xl p-6 backdrop-blur-sm hover:scale-105 transition transform text-white">
             <div class="flex justify-center items-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-indigo-300 drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
             </div>
             <h3 class="text-xl font-semibold mb-2">More to Come</h3>
-            <p class="text-sm text-gray-300">We’re constantly adding new study tools based on feedback.</p>
+            <p class="text-sm text-indigo-100">We’re constantly adding new study tools based on feedback.</p>
         </div>
     </div>
 </section>
+
 
 
 <!-- Testimonials Carousel
@@ -290,14 +416,14 @@
     <p class="text-lg sm:text-xl text-gray-300 mb-10">
         Start for free. Upload your syllabus and get your first AI-curated email within minutes.
     </p>
-    <a href="/choose-newsletter-type" class="inline-block bg-white text-black text-lg font-semibold px-8 py-4 rounded-full shadow-md hover:shadow-lg transition">
-        Create Your First Newsletter →
+    <a href="/register" class="inline-block bg-white text-black text-lg font-semibold px-8 py-4 rounded-full shadow-md hover:shadow-lg transition">
+        Create Your First Class Free →
     </a>
 </section>
 <!-- Custom Black Footer -->
 <footer class="bg-black text-gray-400 py-12 px-6 text-center text-sm">
     <div class="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-        <p>© 2025 MyNewsletter AI. All rights reserved.</p>
+        <p>© 2025 Memoraid. All rights reserved.</p>
         <div class="flex gap-6">
             <a href="/privacy" class="hover:text-white transition">Privacy Policy</a>
             <a href="/terms" class="hover:text-white transition">Terms of Service</a>

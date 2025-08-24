@@ -1,85 +1,336 @@
 {% extends "base.html" %}
-{% block title %}Preview Study Plan - MyNewsletter AI{% endblock %}
+{% block title %}Preview & Confirm - Memoraid{% endblock %}
 
 {% block content %}
+
+  <!-- DEBUG: CSP & Alpine evaluation probe -->
+  <script>
+    (function () {
+      let evalOk = true, evalErr = null;
+      try { new Function('return 42')(); } catch (e) { evalOk = false; evalErr = e; }
+      console.log('🧪 CSP eval test:', evalOk ? 'OK' : 'BLOCKED', evalErr || '');
+      console.log('🧪 Alpine present:', !!window.Alpine);
+
+      // Also show it visibly on the page:
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;bottom:8px;left:8px;background:#111;color:#fff;padding:6px 10px;border-radius:8px;font:12px/1.2 system-ui, sans-serif;z-index:99999;opacity:.85';
+      banner.textContent = `CSP eval: ${evalOk ? 'OK' : 'BLOCKED'} · Alpine: ${!!window.Alpine}`;
+      document.addEventListener('DOMContentLoaded', () => document.body.appendChild(banner));
+      setTimeout(() => banner.remove(), 4000);
+    })();
+  </script>
+
+
+  <!-- DEBUG + Helper: must exist before x-data evaluates -->
+  <script>
+    // backend payload snapshot
+    window.__previewPlan = {{ plan | tojson }};
+    console.log("🧪 plan from backend:", window.__previewPlan);
+    console.log("🧪 topics isArray:", Array.isArray(window.__previewPlan.topics), "len:", (window.__previewPlan.topics || []).length);
+    console.log("🧪 course_name:", window.__previewPlan.course_name, "frequency:", window.__previewPlan.frequency);
+
+    // make the factory global, available before Alpine boots
+    window.previewConfirm = function ({ initialTitle, initialFrequency, topicsLen, sliderMax, initialSendTime, initialTopics }) {
+      console.log("🧪 previewConfirm() called with:", { initialTitle, initialFrequency, topicsLen, sliderMax, initialSendTime, topicsLenPassed: (initialTopics||[]).length });
+      return {
+        title: initialTitle || 'Untitled Course',
+        frequency: initialFrequency || 'daily',
+        sendTime: initialSendTime || 'now',
+        maxEmails: Math.min(topicsLen || 1, sliderMax || 10),
+        topicsLen,
+        sliderMax,
+        topics: initialTopics || [],
+
+        init() {
+          console.log("🧪 Alpine init state:", { title: this.title, frequency: this.frequency, sendTime: this.sendTime, maxEmails: this.maxEmails, topicsLen: this.topicsLen, topicsCount: this.topics.length });
+        },
+
+        segClass(val) {
+          const base = 'px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] transition';
+          const active = 'bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]';
+          const idle = 'hover:bg-[var(--color-card)]';
+          return this.frequency === val ? `${base} ${active}` : `${base} ${idle}`;
+        },
+
+        frequencyLabel() {
+          switch (this.frequency) {
+            case 'daily': return 'Daily';
+            case 'bidaily': return 'Every 2 Days';
+            case 'weekly': return 'Weekly';
+            default: return this.frequency;
+          }
+        },
+
+        sendTimeLabel() {
+          switch (this.sendTime) {
+            case 'now': return 'Immediately';
+            case 'tomorrow': return 'Tomorrow';
+            case 'in_2_days': return 'In 2 Days';
+            case 'in_3_days': return 'In 3 Days';
+            case 'next_week': return 'In 7 Days';
+            default: return this.sendTime;
+          }
+        }
+      }
+    }
+  </script>
+
+
+  <!-- Alpine Helpers (must be defined before x-data runs) -->
+  <script>
+    // Make it global so Alpine can see it at mount time.
+    window.previewConfirm = function ({ initialTitle, initialFrequency, topicsLen, sliderMax, initialSendTime, initialTopics }) {
+      return {
+        title: initialTitle || 'Untitled Course',
+        frequency: initialFrequency || 'daily',
+        sendTime: initialSendTime || 'now',
+        maxEmails: Math.min(topicsLen || 1, sliderMax || 10),
+        topicsLen,
+        sliderMax,
+        topics: initialTopics || [],
+
+        init() {},
+
+        segClass(val) {
+          const base = 'px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] transition';
+          const active = 'bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]';
+          const idle = 'hover:bg-[var(--color-card)]';
+          return this.frequency === val ? `${base} ${active}` : `${base} ${idle}`;
+        },
+
+        frequencyLabel() {
+          switch (this.frequency) {
+            case 'daily': return 'Daily';
+            case 'bidaily': return 'Every 2 Days';
+            case 'weekly': return 'Weekly';
+            default: return this.frequency;
+          }
+        },
+
+        sendTimeLabel() {
+          switch (this.sendTime) {
+            case 'now': return 'Immediately';
+            case 'tomorrow': return 'Tomorrow';
+            case 'in_2_days': return 'In 2 Days';
+            case 'in_3_days': return 'In 3 Days';
+            case 'next_week': return 'In 7 Days';
+            default: return this.sendTime;
+          }
+        }
+      }
+    }
+  </script>
+
+
 <div class="theme-school">
-  <div class="min-h-screen flex items-center justify-center px-4 py-16 bg-[var(--color-bg)]">
-    <div class="bg-white rounded-2xl shadow-lg max-w-3xl w-full p-10 space-y-8">
+  <section
+    x-data="(() => { 
+      try {
+        const payload = {
+          initialTitle: (window.__previewPlan && window.__previewPlan.course_name) ? window.__previewPlan.course_name : 'Untitled Course',
+          initialFrequency: (window.__previewPlan && window.__previewPlan.frequency) ? window.__previewPlan.frequency : 'daily',
+          topicsLen: {{ topics_len }},
+          sliderMax: {{ slider_max }},
+          initialSendTime: 'now',
+          initialTopics: (window.__previewPlan && Array.isArray(window.__previewPlan.topics)) ? window.__previewPlan.topics : []
+        };
 
-      <form action="/confirm-school-newsletter" method="POST" class="space-y-8">
+        console.log('🧪 x-data payload:', payload);
+        return window.previewConfirm(payload);
+      } catch (e) {
+        console.error('❌ x-data evaluation error:', e);
+        return { title: 'ERR', frequency: 'daily', sendTime: 'now', maxEmails: 1, topicsLen: 0, sliderMax: 1, topics: [], __error: e?.message || String(e) };
+      }
+    })()"
+    x-init="init && init()"
+    class="min-h-screen bg-[var(--color-bg)] py-12 px-4"
+  >
 
-        <!-- Header -->
-        <div class="text-center">
-          <h1 class="heading-1 mb-2 text-[var(--color-accent-dark)]">You're Almost Ready!</h1>
-          <p class="subheading">Here's a final preview before we launch your study plan.</p>
-        </div>
 
-        <!-- Editable Course Name -->
-        <div class="text-center" x-data="{ editing: false, title: '{{ plan.course_name }}' }">
-          <h2 class="heading-2 mb-2">Course Name</h2>
+    <div class="max-w-6xl mx-auto space-y-10">
+      <!-- DEBUG live state (remove later) -->
+      <div x-effect="console.log('🧪 state:', { title, frequency, sendTime, maxEmails, topicsCount: topics?.length, topicsLen })"></div>
 
-          <div x-show="!editing" class="flex justify-center items-center gap-2">
-            <p class="text-xl font-semibold text-[var(--color-text)]" x-text="title"></p>
-            <button type="button" @click="editing = true" class="text-[var(--color-accent)] hover:text-[var(--color-accent-dark)]">✏️</button>
+      <!-- Page Header -->
+      <div class="text-center">
+        <h1 class="text-3xl font-bold text-[var(--color-text)] mb-2">Preview & Confirm</h1>
+        <p class="text-[var(--color-muted)] text-sm">Review your study plan before scheduling.</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Left: Main -->
+        <div class="lg:col-span-2 space-y-8">
+          <!-- Course Name Card -->
+          <div class="school-card rounded-2xl shadow-md border border-[var(--color-border)] bg-white">
+            <div class="px-6 py-5 border-b border-[var(--color-border)] flex items-center justify-between">
+              <h2 class="text-lg font-semibold text-[var(--color-text)]">Course Name</h2>
+              <span class="text-xs px-2 py-1 rounded-full school-tag bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)]">Editable</span>
+            </div>
+            <div class="px-6 py-6" x-data="{ editing: false }">
+              <div x-show="!editing" class="flex flex-wrap items-center gap-3">
+                <h2 class="text-2xl font-semibold text-[var(--color-text)]" x-text="title"></h2>
+                <button
+                  type="button"
+                  @click="editing = true; $nextTick(() => $refs.titleInput.focus())"
+                  class="inline-flex items-center gap-1 text-sm school-accent hover:opacity-80"
+                >
+                  ✏️ Edit
+                </button>
+              </div>
+              <div x-show="editing" class="flex items-center gap-3">
+                <input
+                  x-ref="titleInput"
+                  type="text"
+                  name="course_name"
+                  x-model="title"
+                  class="w-full md:w-2/3 text-lg font-semibold border border-[var(--color-border)] rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                >
+                <button
+                  type="button"
+                  @click="editing = false"
+                  class="px-3 py-2 rounded-lg text-sm border border-[var(--color-border)] hover:bg-[var(--color-card)]"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div x-show="editing" class="mt-2">
-            <input 
-              type="text" 
-              name="course_name" 
-              x-model="title" 
-              class="text-center text-xl font-semibold w-full border border-[var(--color-border)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-            >
-            <button type="button" @click="editing = false" class="mt-2 text-sm text-[var(--color-accent)] hover:underline">Done</button>
+          <!-- Topics Preview -->
+          <div class="school-card rounded-2xl shadow-md border border-[var(--color-border)] bg-white">
+            <div class="px-6 py-5 border-b border-[var(--color-border)] flex items-center justify-between">
+              <h2 class="text-lg font-semibold text-[var(--color-text)]">Topics</h2>
+              <span class="text-xs text-[var(--color-muted)]" x-text="`${topicsLen} total`"></span>
+            </div>
+            <div class="px-6 py-5 bg-[var(--color-card)] rounded-b-2xl">
+              <div class="flex flex-wrap gap-2 max-h-40 overflow-y-auto pr-1">
+                <template x-for="topic in topics" :key="topic">
+                  <span
+                    class="school-tag bg-[var(--color-accent-bg)] text-[var(--color-accent-dark)] text-sm px-3 py-1.5 rounded-full"
+                    x-text="topic"
+                  ></span>
+                </template>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Controls -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Frequency -->
+            <div class="school-card p-6 rounded-2xl shadow-md border border-[var(--color-border)] bg-white">
+              <h3 class="text-sm font-medium text-[var(--color-muted)] mb-3">Send Frequency</h3>
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" :class="segClass('daily')" @click="frequency = 'daily'">Daily</button>
+                <button type="button" :class="segClass('bidaily')" @click="frequency = 'bidaily'">Every 2 Days</button>
+                <button type="button" :class="segClass('weekly')" @click="frequency = 'weekly'">Weekly</button>
+              </div>
+            </div>
+
+            <!-- Start Time -->
+            <div class="school-card p-6 rounded-2xl shadow-md border border-[var(--color-border)] bg-white">
+              <h3 class="text-sm font-medium text-[var(--color-muted)] mb-3">First Email</h3>
+              <select
+                name="send_time"
+                id="send_time"
+                x-model="sendTime"
+                class="w-full px-4 py-2 border border-[var(--color-border)] rounded-xl bg-white focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+              >
+                <option value="now">Send Now</option>
+                <option value="tomorrow">Tomorrow</option>
+                <option value="in_2_days">In 2 Days</option>
+                <option value="in_3_days">In 3 Days</option>
+                <option value="next_week">In 7 Days</option>
+              </select>
+              <p class="text-xs text-[var(--color-muted)] mt-2" x-text="`First send: ${sendTimeLabel()}`"></p>
+            </div>
+
+            <!-- Email Count Slider -->
+            <div class="school-card p-6 rounded-2xl shadow-md border border-[var(--color-border)] bg-white md:col-span-2">
+              <h3 class="text-sm font-medium text-[var(--color-muted)] mb-3">Number of Emails</h3>
+              <input
+                type="range"
+                name="max_emails"
+                id="max_emails"
+                :min="1"
+                :max="sliderMax"
+                x-model.number="maxEmails"
+                class="w-full accent-current"
+              >
+              <div class="mt-2 text-sm flex items-center justify-between">
+                <div>
+                  <span class="font-medium" x-text="maxEmails"></span> total emails
+                </div>
+                <span class="text-xs text-[var(--color-muted)]">
+                  Max: <span x-text="sliderMax"></span>
+                </span>
+              </div>
+            </div>
           </div>
 
           <!-- Hidden Inputs -->
-          <input type="hidden" name="topics" value="{{ plan.topics }}">
-          {% for ct in plan.content_types %}
-            <input type="hidden" name="content_types" value="{{ ct }}">
-          {% endfor %}
-          <input type="hidden" name="email" value="{{ plan.email }}">
+          <form id="confirmForm" action="/confirm-school-newsletter" method="POST" class="hidden">
+            <input type="hidden" name="course_name" :value="title">
+            <input type="hidden" name="frequency" :value="frequency">
+            <input type="hidden" name="max_emails" :value="maxEmails">
+            <input type="hidden" name="send_time" :value="sendTime">
+tojson }})">
+            {% for ct in plan.content_types %}
+              <input type="hidden" name="content_types" value="{{ ct }}">
+            {% endfor %}
+            <input type="hidden" name="email" value="{{ plan.email }}">
+          </form>
+
         </div>
 
-        <!-- Topics Preview -->
-        <div class="bg-[var(--color-accent-bg)] border-l-4 border-[var(--color-accent)] p-4 rounded-lg">
-          <p class="italic text-[var(--color-text)]">{{ plan.topics }}</p>
-        </div>
+        <!-- Right: Summary -->
+        <div class="lg:col-span-1">
+          <div class="lg:sticky lg:top-8 space-y-6">
+            <div class="rounded-2xl border border-[var(--color-border)] bg-white shadow-md divide-y">
+              <div class="px-5 py-4 flex items-center justify-between">
+                <h4 class="font-semibold text-[var(--color-text)]">Schedule Summary</h4>
+                <span class="text-xs px-2 py-1 rounded-full bg-[var(--color-card)] text-[var(--color-muted)]">Preview</span>
+              </div>
+              <div class="px-5 py-4 space-y-3 text-sm">
+                <div class="flex justify-between">
+                  <span class="text-[var(--color-muted)]">Course</span>
+                  <span class="font-medium" x-text="title"></span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-[var(--color-muted)]">Frequency</span>
+                  <span class="font-medium" x-text="frequencyLabel()"></span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-[var(--color-muted)]">Emails</span>
+                  <span class="font-medium"><span x-text="maxEmails"></span></span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-[var(--color-muted)]">First Send</span>
+                  <span class="font-medium" x-text="sendTimeLabel()"></span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-[var(--color-muted)]">Topics</span>
+                  <span class="font-medium" x-text="`${topicsLen}`"></span>
+                </div>
+              </div>
+            </div>
 
-        <!-- Frequency & Start Time -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-            <label class="subheading block mb-2 text-sm font-medium text-[var(--color-text)]" for="frequency">Send Frequency</label>
-            <select name="frequency" id="frequency" class="w-full px-4 py-2 border border-[var(--color-border)] rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm">
-              <option value="daily" {% if plan.frequency == 'daily' %}selected{% endif %}>Daily</option>
-              <option value="bidaily" {% if plan.frequency == 'bidaily' %}selected{% endif %}>Every 2 Days</option>
-              <option value="weekly" {% if plan.frequency == 'weekly' %}selected{% endif %}>Weekly</option>
-            </select>
+            <button
+              type="button"
+              @click="document.getElementById('confirmForm').submit()"
+              class="btn-primary school-btn-primary w-full justify-center text-base py-3 rounded-xl shadow-md hover:shadow-lg transition"
+            >
+              🎓 Confirm & Schedule
+            </button>
+
+            <p class="text-xs text-[var(--color-muted)] text-center">
+              You can edit or pause anytime from your dashboard.
+            </p>
           </div>
-
-          <div class="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-            <label class="subheading block mb-2 text-sm font-medium text-[var(--color-text)]" for="send_time">When should we send the first email?</label>
-            <select name="send_time" id="send_time" class="w-full px-4 py-2 border border-[var(--color-border)] rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm">
-              <option value="now" selected>Send Now</option>
-              <option value="tomorrow">Send Tomorrow</option>
-              <option value="in_2_days">Send in 2 Days</option>
-              <option value="in_3_days">Send in 3 Days</option>
-              <option value="next_week">Send in 7 Days</option>
-            </select>
-            <p class="text-xs text-[var(--color-muted)] mt-1">Choose when the first email will go out.</p>
-          </div>
         </div>
-
-        <!-- Confirm Button -->
-        <div class="text-center pt-6">
-          <button type="submit" class="btn-primary text-lg px-6">
-            🎓 Confirm & Schedule
-          </button>
-        </div>
-      </form>
+      </div>
     </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  </section>
 </div>
+
 {% endblock %}

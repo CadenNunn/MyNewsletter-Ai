@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Pricing - MyNewsletter AI{% endblock %}
+{% block title %}Pricing - Memoraid{% endblock %}
 
 {% block content %}
 <section class="py-20 px-4 max-w-6xl mx-auto text-center">
-  <h1 class="heading-1 text-4xl mb-4">Choose Your Plan</h1>
-  <p class="subheading mb-10">Upgrade or downgrade your plan as needed.</p>
+  <h1 class="heading-1 text-4xl mb-4">Pick Your Study Plan</h1>
+  <p class="subheading mb-10">Built for students. Switch anytime.</p>
 
   <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
     <!-- Free Plan -->
     <div class="bg-white rounded-2xl shadow-md hover:shadow-xl transition p-8 flex flex-col items-center border-2 {% if current_plan == 'free' %}border-[var(--color-accent)]{% else %}border-gray-200{% endif %} hover:bg-gray-50">
       <h2 class="heading-2 mb-2 text-[var(--color-text)]">Free</h2>
-      <p class="text-sm text-[var(--color-muted)] mb-2">For beginners or testing</p>
+      <p class="text-sm text-[var(--color-muted)] mb-2">For one class or trying it out</p>
       <p class="text-3xl font-bold mb-2 text-[var(--color-text)]">$0<span class="text-lg font-normal">/mo</span></p>
 
       {% if session['user_id'] %}
@@ -26,9 +26,9 @@
       {% endif %}
 
       <ul class="body-text mt-6 space-y-2 text-center">
-        <li>• 1 total newsletter</li>
-        <li>• 1 active newsletter at a time</li>
-        <li>• Core AI features</li>
+        <li>• 1 total class</li>
+        <li>• 5 emails max in that class</li>
+        <li>• Core AI study features</li>
       </ul>
     </div>
 
@@ -36,7 +36,7 @@
     <div class="bg-white rounded-2xl shadow-md hover:shadow-xl transition p-8 flex flex-col items-center border-2 {% if current_plan == 'plus' %}border-[var(--color-accent)]{% else %}border-gray-200{% endif %} relative hover:bg-gray-50">
       <span class="absolute top-0 left-0 bg-[var(--color-accent)] text-white text-xs px-3 py-1 rounded-br-xl">Most Popular</span>
       <h2 class="heading-2 mb-2 text-[var(--color-text)]">Plus</h2>
-      <p class="text-sm text-[var(--color-muted)] mb-2">For solo creators</p>
+      <p class="text-sm text-[var(--color-muted)] mb-2">For busy students</p>
       <p class="text-3xl font-bold mb-2 text-[var(--color-text)]">$5<span class="text-lg font-normal">/mo</span></p>
 
       {% if session['user_id'] %}
@@ -53,8 +53,8 @@
       {% endif %}
 
       <ul class="body-text mt-6 space-y-2 text-center">
-        <li>• 3 total newsletters</li>
-        <li>• 1 active newsletter at a time</li>
+        <li>• Up to 3 active classes</li>
+        <li>• 10 emails per newsletter</li>
         <li>• Priority support</li>
       </ul>
     </div>
@@ -62,7 +62,7 @@
     <!-- Pro Plan -->
     <div class="bg-white rounded-2xl shadow-md hover:shadow-xl transition p-8 flex flex-col items-center border-2 {% if current_plan == 'pro' %}border-[var(--color-accent)]{% else %}border-gray-200{% endif %} hover:bg-gray-50">
       <h2 class="heading-2 mb-2 text-[var(--color-text)]">Pro</h2>
-      <p class="text-sm text-[var(--color-muted)] mb-2">For power users</p>
+      <p class="text-sm text-[var(--color-muted)] mb-2">For serious students & teams</p>
       <p class="text-3xl font-bold mb-2 text-[var(--color-text)]">$15<span class="text-lg font-normal">/mo</span></p>
 
       {% if session['user_id'] %}
@@ -79,9 +79,9 @@
       {% endif %}
 
       <ul class="body-text mt-6 space-y-2 text-center">
-        <li>• Unlimited newsletters</li>
-        <li>• Unlimited active campaigns</li>
-        <li>• Advanced AI + analytics</li>
+        <li>• Unlimited classes</li>
+        <li>• Unlimited study newsletters</li>
+        <li>• Advanced AI</li>
       </ul>
     </div>
   </div>

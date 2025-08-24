@@ -32,6 +32,62 @@ if not BREVO_API_KEY:
 if not BREVO_TEMPLATE_ID:
     print("❌ ERROR: BREVO_TEMPLATE_ID is missing in .env")
 
+def _freq_to_timedelta(freq: str) -> timedelta:
+    freq = (freq or "").lower()
+    if freq == 'daily':
+        return timedelta(days=1)
+    if freq == 'bidaily':
+        return timedelta(days=2)
+    if freq == 'weekly':
+        return timedelta(weeks=1)
+    return timedelta(days=7)
+
+def _schedule_next_school_email(db, plan: SchoolNewsletter, just_sent_position: int, now_utc: datetime):
+    """Create the next Email row. If new topics are exhausted but we haven't hit the selected total,
+    keep scheduling by cycling prior topics (simple review placeholder)."""
+    try:
+        topics_list = json.loads(plan.topics) if plan.topics else []
+    except Exception:
+        topics_list = []
+
+    total_topics = len(topics_list)
+    total_allowed = plan.max_emails if getattr(plan, 'max_emails', None) else total_topics  # Pro: no explicit cap beyond topics
+
+    next_pos = just_sent_position + 1
+    if next_pos > total_allowed:
+        return None  # reached the user-selected total emails
+
+    if next_pos <= total_topics:
+        # still sending new topics
+        next_topic = topics_list[next_pos - 1]
+    else:
+        # no new topics left: cycle through earlier topics as review
+        if total_topics == 0:
+            return None
+        review_index = (next_pos - total_topics - 1) % total_topics
+        next_topic = topics_list[review_index]
+
+    interval = _freq_to_timedelta(plan.frequency)
+    send_at = now_utc + interval
+
+    next_email = Email(
+        user_id=plan.user_id,
+        plan_id=plan.id,
+        position_in_plan=next_pos,
+        topic=next_topic,
+        title=None,
+        send_date=send_at,
+        sent=False
+    )
+    db.add(next_email)
+
+    plan.next_send_time = send_at
+    db.commit()
+    db.refresh(next_email)
+    return next_email
+
+
+
 def send_email(to_email, subject, html_content):
     print(f"📩 Preparing to send email to {to_email}")
     print(f"📄 Subject: {subject}")
@@ -48,7 +104,7 @@ def send_email(to_email, subject, html_content):
     email = sib_api_v3_sdk.SendSmtpEmail(
         to=[{"email": to_email}],
         template_id=int(BREVO_TEMPLATE_ID),
-        sender={"name": "MyNewsletter AI", "email": "no-reply@mynewsletterai.com"},
+        sender={"name": "Memoraid", "email": "no-reply@memoraidai.com"},
         params={
             "title": subject,
             "content": html_content
@@ -138,24 +194,42 @@ def check_and_send():
                             )
 
                         elif plan_type == "school":
-                            from newsletter_writer_school import write_study_email  # New GPT writer for school
+                            from newsletter_writer_school import write_study_email, generate_subject_line  # ✅ New helper
+
+                            # Convert stored JSON string of topics into Python list
+                            try:
+                                topics_list = json.loads(plan.topics) if plan.topics else []
+                            except Exception:
+                                topics_list = []
+
+                            # Get today's topic from the Email row
+                            current_topic = email.topic or (
+                                topics_list[email.position_in_plan - 1] if 0 <= (email.position_in_plan - 1) < len(topics_list) else "Untitled Topic"
+                            )
+
+                            # Generate a subject line for the email
+                            subject_line = generate_subject_line(current_topic, plan.course_name)
 
                             html = write_study_email(
                                 course_name=plan.course_name,
-                                topics=plan.topics,
-                                section_title=email.title,
+                                topics=plan.topics,  # full course topic list
+                                section_title=current_topic,  # ✅ Using topic instead of title
                                 content_types=json.loads(plan.content_types),
                                 plan_title=plan.course_name,
                                 position_in_plan=email.position_in_plan,
-                                past_content=None  # Optional for now
+                                past_content=None
                             )
 
+                            # Send the email
+                            send_email(user.email, subject_line, html)
+
+                            # Store generated subject line in DB for record
+                            email.title = subject_line
+
                     except Exception as e:
-                        print(f"❌ GPT generation failed for email {email.id}: {e}")
+                        print(f"❌ GPT generation failed for email {getattr(email, 'email_id', None)}: {e}")
                         continue
 
-                    # Send the email
-                    send_email(user.email, email.title, html)
 
                     # Update email row
                     email.html_content = html
@@ -183,33 +257,76 @@ def check_and_send():
                     db.commit()
                     print(f"✅ Logged + Sent: {email.title}")
 
-                    # Check if plan is complete
-                    total = db.query(Email).filter_by(plan_id=plan.id, user_id=plan.user_id).count()
-                    sent = db.query(Email).filter_by(plan_id=plan.id, user_id=plan.user_id, sent=True).count()
-
-                    print(f"🔍 Debug — Plan {plan.id}: total={total}, sent={sent}")
-                    if total == sent:
-                        print(f"✅ Plan complete? True")
-
-                        # Verify with retries
-                        for i in range(5):
-                            verified_sent = db.query(Email).filter_by(plan_id=plan.id, sent=True).count()
-                            print(f"🔄 Retry check ({i+1}/5): sent={verified_sent} (expected {total})")
-                            if verified_sent == total:
-                                break
-                            time.sleep(0.5)
-
-                        # Trigger deletion
+                    # Rolling scheduling: for SCHOOL plans, schedule the next email after a successful send
+                    if plan_type == "school":
                         try:
-                            print(f"🔁 Sending POST to /check-and-delete-plan for plan_id={plan.id}")
-                            response = requests.post(
-                                "http://localhost:5000/check-and-delete-plan",
-                                data={"plan_id": plan.id}
+                            topics_list = json.loads(plan.topics) if plan.topics else []
+                        except Exception:
+                            topics_list = []
+
+                        total_topics = len(topics_list)
+                        total_allowed = plan.max_emails if getattr(plan, 'max_emails', None) else total_topics
+
+                        sent_count = db.query(Email).filter_by(plan_id=plan.id, user_id=plan.user_id, sent=True).count()
+
+                        print(f"🔍 Debug — Plan {plan.id} (school): total_allowed={total_allowed}, total_topics={total_topics}, sent_count={sent_count}")
+
+                        if sent_count >= total_allowed:
+                            print("✅ School plan complete — reached selected total emails")
+
+                            # Verify with retries (paranoia)
+                            for i in range(5):
+                                verified_sent = db.query(Email).filter_by(plan_id=plan.id, sent=True).count()
+                                if verified_sent >= total_allowed:
+                                    break
+                                time.sleep(0.5)
+
+                            # Mark complete; do not delete
+                            plan.first_pass_complete = True
+                            plan.completed_at = now
+                            plan.next_send_time = None
+                            db.commit()
+
+                            remaining_new = max(total_topics - min(total_topics, total_allowed), 0)
+                            if remaining_new > 0:
+                                print(f"ℹ️ {remaining_new} new topics remain locked — show upgrade CTA.")
+
+                        else:
+                            # Schedule next one (new if available, otherwise review-cycle), until total_allowed is reached
+                            next_email = _schedule_next_school_email(
+                                db=db,
+                                plan=plan,
+                                just_sent_position=email.position_in_plan,
+                                now_utc=now
                             )
-                            print(f"🧹 Cleanup status: {response.status_code}")
-                            print(f"🧹 Cleanup response: {response.text}")
-                        except Exception as e:
-                            print(f"❌ Failed to delete plan {plan.id}: {e}")
+                            if next_email:
+                                print(f"📅 Next school email scheduled: id={next_email.email_id}, position={next_email.position_in_plan}, send_date={next_email.send_date.isoformat()}")
+
+
+
+                    else:
+                        # GENERAL plans keep their current behavior (you can convert later if desired)
+                        total = db.query(Email).filter_by(plan_id=plan.id, user_id=plan.user_id).count()
+                        sent = db.query(Email).filter_by(plan_id=plan.id, user_id=plan.user_id, sent=True).count()
+
+                        print(f"🔍 Debug — Plan {plan.id} (general): total={total}, sent={sent}")
+                        if total == sent:
+                            print(f"✅ Plan complete? True")
+                            for i in range(5):
+                                verified_sent = db.query(Email).filter_by(plan_id=plan.id, sent=True).count()
+                                if verified_sent == total:
+                                    break
+                                time.sleep(0.5)
+                            try:
+                                print(f"🔁 Sending POST to /check-and-delete-plan for plan_id={plan.id}")
+                                response = requests.post(
+                                    "http://localhost:5000/check-and-delete-plan",
+                                    data={"plan_id": plan.id}
+                                )
+                                print(f"🧹 Cleanup status: {response.status_code}")
+                                print(f"🧹 Cleanup response: {response.text}")
+                            except Exception as e:
+                                print(f"❌ Failed to delete plan {plan.id}: {e}")
 
             finally:
                 db.close()

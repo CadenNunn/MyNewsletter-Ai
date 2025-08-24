@@ -17,12 +17,14 @@ from models import Newsletter, Email
 from sqlalchemy import func
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy import asc, desc
+from math import ceil
 from models import SchoolNewsletter
 from planner_school import create_study_plan
 from utils.syllabus_parser import extract_topics_from_syllabus
 from flask_session import Session
 import redis
-
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 
 
@@ -72,21 +74,61 @@ from scheduler import scheduler
 scheduler.start()
 
 
-# Plan-based limits
+# Plan-based limits (subs-first)
+# Plan-based limits (subs-first)
 PLAN_FEATURES = {
-    'free': {'max_total': 1},
-    'plus': {'max_total': 3},
-    'pro': {'max_total': None},
+    'free': {'max_total': 1, 'school': {'slider_max': 5}},   # total emails allowed
+    'plus': {'max_total': 3, 'school': {'slider_max': 30}},
+    'pro':  {'max_total': None, 'school': {'slider_max': None}},  # None = unlimited in UI
 }
 
+
 # Pricing Keys
+
+STRIPE_PRICE_PLUS = os.getenv("STRIPE_PRICE_PLUS")
+STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO")
+
 STRIPE_PRICES = {
-    "plus": "price_1RSVe72MKajKZrXPrsuvcvnO",
-    "pro": "price_1RSVeL2MKajKZrXP4yIxSw58"
+    "plus": STRIPE_PRICE_PLUS,
+    "pro": STRIPE_PRICE_PRO,
 }
 
 from db import SessionLocal
 from models import User
+
+def _get_user_plan_features(db, user_id: int):
+    user = db.query(User).filter(User.id == user_id).first()
+    plan_name = (user.plan or 'free').lower() if user else 'free'
+    return PLAN_FEATURES.get(plan_name, PLAN_FEATURES['free'])
+
+def _slider_max_for_user(features: dict, topics_len: int) -> int:
+    """Return the max slider value the user can pick (total emails, new + review)."""
+    school_cfg = features.get('school', {})
+    cap = school_cfg.get('slider_max')  # None => unlimited
+    if cap is None:
+        # Pro: give plenty of headroom; keep finite for slider UX
+        return max(topics_len, 60)  # tweak later if you want
+    return max(1, cap)
+
+
+def _get_user_plan_features(db, user_id: int):
+    user = db.query(User).filter(User.id == user_id).first()
+    plan_name = (user.plan or 'free').lower() if user else 'free'
+    return PLAN_FEATURES.get(plan_name, PLAN_FEATURES['free'])
+
+def _allowed_email_options(features: dict, topics_len: int):
+    sch = features.get('school', {})
+    cap = sch.get('max_emails_cap')  # None => unlimited
+    counts = [n for n in sch.get('allowed_counts', [])
+              if isinstance(n, int) and n <= topics_len and (cap is None or n <= cap)]
+    # Fallback: always show at least one option
+    if not counts:
+        if cap is None:
+            counts = [min(5, topics_len)] if topics_len > 0 else [5]
+        else:
+            counts = [min(cap, topics_len)] if topics_len > 0 else [cap or 5]
+    include_all = bool(sch.get('allow_all')) and (cap is None) and topics_len > 0
+    return counts, include_all, cap
 
 def get_user_email(user_id):
     db = SessionLocal()
@@ -194,20 +236,47 @@ def inject_subscription_context():
         downgrade_to = user.downgrade_to if user else None
         subscription_end_date = user.subscription_end_date if user else None
 
+        # 🛡️ Normalize to ISO string if it's a datetime; guard None
+        try:
+            from datetime import datetime, timezone
+            if subscription_end_date is not None and not isinstance(subscription_end_date, str):
+                # Expecting a datetime-like object; coerce to UTC ISO string
+                if isinstance(subscription_end_date, datetime):
+                    if subscription_end_date.tzinfo is None:
+                        subscription_end_date = subscription_end_date.replace(tzinfo=timezone.utc)
+                    subscription_end_date = subscription_end_date.isoformat()
+                else:
+                    # Unknown type; drop it to avoid .fromisoformat errors
+                    print(f"⚠️ subscription_end_date unexpected type: {type(subscription_end_date)}; clearing.")
+                    subscription_end_date = None
+        except Exception as e:
+            print("⚠️ Failed to coerce subscription_end_date to string:", e)
+            subscription_end_date = None
+
         days_left = None
-        if subscription_end_date and subscription_end_date.strip():
-            from datetime import datetime, date
+        subscription_end_display = None
+
+        if isinstance(subscription_end_date, str) and subscription_end_date.strip():
+            from datetime import datetime, timezone, date
             try:
-                end_date = datetime.fromisoformat(subscription_end_date)
-                days_left = (end_date.date() - date.today()).days
+                # tolerate trailing 'Z' and treat as UTC
+                end_dt = datetime.fromisoformat(subscription_end_date.replace('Z', ''))
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+                subscription_end_display = end_dt.isoformat()
+                today_utc = datetime.now(timezone.utc).date()
+                days_left = (end_dt.date() - today_utc).days
                 if days_left < 0:
                     days_left = None
             except Exception as e:
-                print(f"⚠️ Invalid subscription_end_date format: {subscription_end_date}")
+                print(f"⚠️ Invalid subscription_end_date format: {subscription_end_date} — {e}")
+                subscription_end_display = subscription_end_date  # raw fallback
 
         return {
             'subscription_days_left': days_left,
-            'downgrade_to': downgrade_to
+            'downgrade_to': downgrade_to,
+            'pending_downgrade': bool(downgrade_to),
+            'subscription_end_display': subscription_end_display,
         }
 
     except Exception as e:
@@ -218,8 +287,12 @@ def inject_subscription_context():
 
 
 # ---------------- Home ----------------
-@app.route('/')
+@app.route("/")
 def home():
+    # If logged in, send straight to dashboard
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))  # endpoint for /dashboard
+
     db = SessionLocal()
     try:
         reviews_query = (
@@ -232,9 +305,10 @@ def home():
             {"name": r.name, "stars": r.stars, "comment": r.comment}
             for r in reviews_query
         ]
-        return render_template('index.html', reviews=reviews, hide_header=True, hide_footer=True)
+        return render_template("index.html", reviews=reviews, hide_header=True, hide_footer=True)
     finally:
         db.close()
+
 
 
 
@@ -502,36 +576,60 @@ def generate_school_newsletter():
         flash("Something went wrong. Please try again.")
         return redirect(url_for('build_school_newsletter'))
 
-    course_name = data['course_name']
-    topics = data['topics']
-    content_types = data['content_types']  # list of strings
+    course_name    = data['course_name']
+    topics_or_text = data['topics']            # 👈 raw string OR list
+    content_types  = data['content_types']     # list of strings
 
-    # 🔥 Generate plan using GPT
-    plan_title, summary, section_titles = create_study_plan(course_name, topics, content_types)
+    # Call the updated planner (extracts ALL real topics; variable length)
+    plan_title, summary, extracted_topics = create_study_plan(course_name, topics_or_text,     content_types)
 
-    if not plan_title or not section_titles:
+    if not plan_title or not extracted_topics:
         flash("AI failed to generate a valid study plan. Please try again.")
         return redirect(url_for('build_school_newsletter'))
 
-
-    # 🧠 Store completed plan in session
+    # Persist the AI-extracted list (this becomes the source of truth going forward)
     session['school_newsletter'] = {
         **data,
         'course_name': course_name,
-        'topics': topics,
+        'topics': extracted_topics,      # 👈 store the list now
         'content_types': content_types,
         'plan_title': plan_title,
-        'section_titles': section_titles,
+        'section_titles': extracted_topics,  # if your template expects this key
         'summary': summary
     }
 
+    # slider bounds: derive from the extracted list length
+    db = SessionLocal()
+    try:
+        features   = _get_user_plan_features(db, data['user_id'])
+        topics_len = len(extracted_topics)     # 👈 from AI output
+        slider_max = _slider_max_for_user(features, topics_len)
+    finally:
+        db.close()
+
+
     max_datetime = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
+
+    # ---- DEBUG: verify data headed to template ----
+    try:
+        _plan_dbg = session['school_newsletter']
+        print("🧪 PREVIEW plan keys:", list(_plan_dbg.keys()))
+        print("🧪 PREVIEW course_name:", repr(_plan_dbg.get('course_name')))
+        print("🧪 PREVIEW frequency:", repr(_plan_dbg.get('frequency')))
+        _topics = _plan_dbg.get('topics')
+        print("🧪 PREVIEW topics type:", type(_topics).__name__, "len:", (len(_topics) if isinstance(_topics, list) else 'n/a'))
+        print("🧪 PREVIEW first topic:", (_topics[0] if isinstance(_topics, list) and _topics else 'n/a'))
+    except Exception as e:
+        print("❌ PREVIEW debug print failed:", e)
 
     return render_template(
         'school_preview.html',
         plan=session['school_newsletter'],
-        max_datetime=max_datetime
+        max_datetime=max_datetime,
+        topics_len=topics_len,
+        slider_max=slider_max
     )
+
 
 
 #---------------- SCHOOL Create newsletter----------
@@ -548,14 +646,20 @@ def create_school_newsletter():
         flash("You must be logged in to create a school newsletter.")
         return redirect(url_for('login'))
 
+    # Pass raw textarea (could be a paragraph or a list) to the planner
+    raw_topics_or_text = (topics or "").strip()
+
     session['school_newsletter_input'] = {
         'user_id': user_id,
         'email': email,
         'course_name': course_name,
-        'topics': topics,
+        'topics': raw_topics_or_text,    # 👈 raw string; planner will extract ALL topics
         'frequency': frequency,
         'content_types': content_types
     }
+
+
+
 
     return render_template('loading_school.html', topic=course_name, demographic="Students")
 
@@ -573,17 +677,25 @@ def confirm_school_newsletter():
     frequency = request.form.get('frequency')
     send_time = request.form.get('send_time')
     course_name = request.form.get('course_name') or data.get('course_name')
-    data['frequency'] = frequency
-
-    user_id = data.get('user_id')
-    email = data.get('email')
-    topics = data.get('topics')
-    section_titles = data.get('section_titles')
+    topics_list = data.get('topics')  # full list
     content_types = data.get('content_types')
     summary = data.get('summary')
+    user_id = data.get('user_id')
+    email = data.get('email')
 
+    # Slider value: total emails to send (new + review)
+    raw_max = request.form.get('max_emails', '')
+    try:
+        requested_total = int(raw_max) if raw_max.strip() else None
+    except ValueError:
+        requested_total = None
+
+    if not topics_list or not isinstance(topics_list, list):
+        flash("No topics found for this study plan.")
+        return redirect(url_for('build_school_newsletter'))
+
+    # First send time
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-
     if send_time == 'now':
         first_send = now
     elif send_time == 'tomorrow':
@@ -603,36 +715,39 @@ def confirm_school_newsletter():
             print("❌ Error parsing custom time, defaulting to now:", e)
             first_send = now
 
-    freq_map = {'daily': 1, 'bidaily': 2, 'weekly': 7}
-    interval_days = freq_map.get(frequency.lower(), 7)
-
     db = SessionLocal()
 
-    # ✅ Plan limit enforcement (using max_total only)
-    user = db.query(User).filter(User.id == user_id).first()
-    plan = user.plan.lower() if user and user.plan else 'free'
-    limits = PLAN_FEATURES.get(plan, {'max_total': 1})
-
+    # Enforce user plan total plans
+    features = _get_user_plan_features(db, user_id)
+    max_total = features.get('max_total', 1)
     general_count = db.query(Newsletter).filter(Newsletter.user_id == user_id).count()
-    school_count = db.query(SchoolNewsletter).filter(SchoolNewsletter.user_id == user_id).count()
-    total_count = general_count + school_count
-
-    if limits['max_total'] is not None and total_count >= limits['max_total']:
+    school_count  = db.query(SchoolNewsletter).filter(SchoolNewsletter.user_id == user_id).count()
+    if max_total is not None and (general_count + school_count) >= max_total:
         db.close()
         flash("You’ve reached your plan’s newsletter limit. Upgrade to create more.")
         return redirect(url_for('dashboard'))
 
-    # ✅ Insert into SchoolNewsletter table (always active)
+    # Clamp slider to plan’s slider_max
+    topics_len = len(topics_list)
+    slider_max = _slider_max_for_user(features, topics_len)
+    if requested_total is None:
+        # Pro selecting "All" or blank -> default to all new topics (topics_len)
+        max_emails_total = topics_len
+    else:
+        max_emails_total = max(1, min(requested_total, slider_max))
+
+    # Create plan (store full topics + total emails to send in first pass)
     new_school_plan = SchoolNewsletter(
         user_id=user_id,
         email=email,
         course_name=course_name,
-        topics=topics,
+        topics=json.dumps(topics_list),
         content_types=json.dumps(content_types),
         frequency=frequency,
         next_send_time=first_send,
-        is_active=1,  # Always active now
-        summary=summary
+        is_active=1,
+        summary=summary,
+        max_emails=max_emails_total      # NOW: total emails (new + review)
     )
     db.add(new_school_plan)
     db.commit()
@@ -640,48 +755,26 @@ def confirm_school_newsletter():
     new_school_plan_id = new_school_plan.id
     print("🧾 Inserted SchoolNewsletter ID:", new_school_plan_id)
 
-    # ✅ Date Sync Data Fetch
-    date_topic_map = session.get('syllabus_date_topic_map', {})
-    date_sync_enabled = session.get('date_sync_enabled', False)
-
-    print("🗓 Date Topic Map Keys Loaded:", list(date_topic_map.keys()))
-    print(f"📢 Date Sync Enabled: {date_sync_enabled}")
-
-    # ✅ Schedule emails with Date Sync Override
-    for i, title in enumerate(section_titles):
-        send_date = first_send + timedelta(days=interval_days * i)
-        send_date_str = send_date.strftime('%Y-%m-%d')
-
-        print(f"Processing Email {i+1}: Send Date {send_date_str}")
-
-        if date_sync_enabled:
-            if send_date_str in date_topic_map:
-                print(f"✅ MATCH FOUND — Overriding title: '{title}' → '{date_topic_map[send_date_str]}'")
-                title = date_topic_map[send_date_str]
-            else:
-                print(f"❌ No match for {send_date_str}. Keeping AI-generated title.")
-
-        email_obj = Email(
-            user_id=user_id,
-            plan_id=new_school_plan_id,
-            position_in_plan=i + 1,
-            title=title,
-            send_date=send_date,
-            sent=False
-        )
-        db.add(email_obj)
-
+    # Schedule ONLY the first email
+    first_topic = topics_list[0]
+    first_email = Email(
+        user_id=user_id,
+        plan_id=new_school_plan_id,
+        position_in_plan=1,
+        topic=first_topic,
+        title=None,
+        send_date=first_send,
+        sent=False
+    )
+    db.add(first_email)
     db.commit()
     db.close()
 
-    # ✅ Session Cleanup
-    session.pop('syllabus_course_name', None)
-    session.pop('syllabus_extracted_topics', None)
-    session.pop('syllabus_date_topic_map', None)
-    session.pop('date_sync_enabled', None)
+    # Cleanup
+    for key in ['syllabus_course_name', 'syllabus_extracted_topics', 'syllabus_date_topic_map', 'date_sync_enabled']:
+        session.pop(key, None)
 
     return render_template("success.html", next_send=first_send.isoformat())
-
 
 
 #--------------- Syllabus Upload --------------------
@@ -721,6 +814,38 @@ def upload_syllabus():
     print("Extracted Date Topic Map:", date_topic_map)
 
     return redirect(url_for('build_school_newsletter'))
+
+# ---------------- Upload Documents ----------------
+from utils.materials_parser import extract_topics_from_material
+
+@app.route('/upload-material', methods=['POST'])
+def upload_material():
+    if 'user_id' not in session:
+        flash("Please log in to upload materials.")
+        return redirect(url_for('login'))
+
+    f = request.files.get('material')
+    if not f:
+        flash("No file uploaded.")
+        return redirect(url_for('build_school_newsletter'))
+
+    data = extract_topics_from_material(f.read(), f.filename)
+    course_title = data.get('course_title', '')
+    topics = data.get('topics', [])
+    # doc_type = data.get('doc_type', 'unknown')  # optional log
+
+    # Use the SAME session keys your builder expects
+    session['syllabus_course_name'] = course_title or ''
+    session['syllabus_extracted_topics'] = topics
+    session['syllabus_date_topic_map'] = {}    # none for materials
+    session['date_sync_enabled'] = False
+
+    print("✅ Material uploaded:", f.filename)
+    print("Course Title (guess):", course_title)
+    print("Extracted Topics:", topics[:10])
+
+    return redirect(url_for('build_school_newsletter'))
+
 
 # ---------------- User Registration ----------------
 from sqlalchemy.exc import IntegrityError
@@ -829,22 +954,46 @@ def dashboard():
             .all()
         )
 
-        # 🧠 Get plan progress using general emails table only (school content reuses it)
-        email_rows = (
-            db.query(Email.plan_id)
-            .filter(Email.user_id == user_id)
-            .with_entities(
+        # 🧠 Progress is now: SENT vs MAX (not total rows in emails table)
+        # 1) Sent count per plan_id
+        sent_rows = (
+            db.query(
                 Email.plan_id,
-                func.count().label("total"),
                 func.sum(func.cast(Email.sent, Integer)).label("sent")
             )
+            .filter(Email.user_id == user_id)
             .group_by(Email.plan_id)
             .all()
         )
-        plan_progress = {
-            row.plan_id: {"total": row.total, "sent": row.sent or 0}
-            for row in email_rows
-        }
+        sent_by_plan = {row.plan_id: (row.sent or 0) for row in sent_rows}
+
+        # 2) Cap comes from the specific plan object (NOT user plan).
+        #    - SchoolNewsletter: use n.max_emails (can be None → Unlimited)
+        #    - Newsletter (general): currently has no max_emails field → Unlimited by default
+
+        def to_int_or_none(x):
+            try:
+                return int(x) if x is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        plan_progress = {}
+
+        # General newsletters
+        for n in general_newsletters:
+            cap = getattr(n, "max_emails", None)  # Newsletter model has no max_emails, so None
+            plan_progress[n.id] = {
+                "cap": to_int_or_none(cap),
+                "sent": sent_by_plan.get(n.id, 0)
+            }
+
+        # School newsletters
+        for n in school_newsletters:
+            cap = to_int_or_none(n.max_emails)
+            plan_progress[n.id] = {
+                "cap": cap,
+                "sent": sent_by_plan.get(n.id, 0)
+            }
 
         # 🧩 Normalize both general and school newsletters into a single unified list
         def format_general(n):
@@ -903,6 +1052,97 @@ def dashboard():
 
     finally:
         db.close()
+
+#-------------- Edit ---------------------
+@app.route('/edit-newsletter', methods=['GET', 'POST'])
+def edit_newsletter():
+    if 'user_id' not in session:
+        flash("Please log in to edit a newsletter.")
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    plan_id = request.args.get('plan_id') or request.form.get('plan_id')
+    plan_type = (request.args.get('plan_type') or request.form.get('plan_type') or '').strip().lower()
+
+    if not plan_id or plan_type not in ('general', 'school'):
+        flash("Invalid edit request.")
+        return redirect(url_for('dashboard'))
+
+    db = SessionLocal()
+    try:
+        # Fixed option sets we support in UI
+        freq_options = ["daily", "biweekly", "weekly"]
+        content_type_options = ["summary", "example", "quiz", "flashcards"]
+
+        if plan_type == 'general':
+            plan = db.query(Newsletter).filter(Newsletter.id == plan_id, Newsletter.user_id == user_id).first()
+            if not plan:
+                flash("Newsletter not found.")
+                return redirect(url_for('dashboard'))
+
+            if request.method == 'POST':
+                plan.plan_title = request.form.get('plan_title', plan.plan_title)
+                freq = request.form.get('frequency')
+                if freq in freq_options:
+                    plan.frequency = freq
+                db.commit()
+                flash("Newsletter updated.")
+                return redirect(url_for('dashboard'))
+
+            # GET → render form
+            return render_template(
+                'edit_newsletter.html',
+                plan_type='general',
+                plan_id=plan.id,
+                plan_title=plan.plan_title or '',
+                frequency=plan.frequency or '',
+                freq_options=freq_options,
+                content_type_options=[],          # not used for general
+                selected_content_types=[]         # not used for general
+            )
+
+        else:
+            plan = db.query(SchoolNewsletter).filter(SchoolNewsletter.id == plan_id, SchoolNewsletter.user_id == user_id).first()
+            if not plan:
+                flash("Study plan not found.")
+                return redirect(url_for('dashboard'))
+
+            import json
+            if request.method == 'POST':
+                plan.course_name = request.form.get('plan_title', plan.course_name)
+                freq = request.form.get('frequency')
+                if freq in freq_options:
+                    plan.frequency = freq
+
+                # Gather selected content types from checkboxes
+                selected = request.form.getlist('content_types')
+                selected = [c for c in selected if c in content_type_options]
+                plan.content_types = json.dumps(selected)
+                db.commit()
+                flash("Study plan updated.")
+                return redirect(url_for('dashboard'))
+
+            # GET → render form
+            try:
+                selected_ct = json.loads(plan.content_types) if plan.content_types else []
+                if not isinstance(selected_ct, list):
+                    selected_ct = []
+            except Exception:
+                selected_ct = []
+
+            return render_template(
+                'edit_newsletter.html',
+                plan_type='school',
+                plan_id=plan.id,
+                plan_title=plan.course_name or '',
+                frequency=plan.frequency or '',
+                freq_options=freq_options,
+                content_type_options=content_type_options,
+                selected_content_types=selected_ct
+            )
+    finally:
+        db.close()
+
 
 #-------------- Change Send Timer ---------
 from pytz import utc
@@ -1225,7 +1465,7 @@ def create_checkout_session(plan):
         return redirect(url_for('pricing'))
 
     user_id = session['user_id']
-    user_email = get_user_email(user_id)  # ✅ Already converted to use SQLAlchemy earlier
+    user_email = get_user_email(user_id)
 
     db = SessionLocal()
     try:
@@ -1240,35 +1480,35 @@ def create_checkout_session(plan):
             user.stripe_customer_id = customer.id
             db.commit()
 
-        # ✅ Create Stripe checkout session
+        # ✅ Create Stripe Checkout Session for a subscription
         checkout_session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
             mode='subscription',
             customer=user.stripe_customer_id,
             line_items=[{
                 'price': STRIPE_PRICES[plan],
-                'quantity': 1
+                'quantity': 1,
             }],
-            allow_promotion_codes=True,
             success_url=url_for('dashboard', _external=True),
             cancel_url=url_for('pricing', _external=True),
+            allow_promotion_codes=True,
             metadata={
-                'user_id': user_id,
+                'user_id': str(user_id),
                 'new_plan': plan
             }
         )
-        return redirect(checkout_session.url)
+        # 303 to avoid form resubmission issues
+        return redirect(checkout_session.url, code=303)
 
     except Exception as e:
-        print("Stripe Checkout Error:", e)
-        flash("Something went wrong starting your payment.")
+        print("⚠️ Stripe Checkout error:", e)
+        flash("Unable to start checkout. Please try again.")
         return redirect(url_for('pricing'))
+
     finally:
         db.close()
 
 #---------------- Webhook -------------
-import psycopg2
-from psycopg2.extras import RealDictCursor
+
 
 @app.route('/webhook', methods=['POST'])
 def stripe_webhook():
@@ -1281,6 +1521,7 @@ def stripe_webhook():
         import json
         print("📦 Full event payload:")
         print(json.dumps(event, indent=2))
+        print(f"🔎 Event type received: {event.get('type')}")
 
     except ValueError as e:
         print("❌ Invalid payload:", e)
@@ -1309,64 +1550,365 @@ def stripe_webhook():
                 return '', 200
 
             subscription_obj = stripe.Subscription.retrieve(subscription_id)
-            items_data = subscription_obj.get('items', {}).get('data', [])
-            ends_at = items_data[0].get('current_period_end') if items_data else None
+
+            # ⚙️ Compute ends_at with fallbacks for new API versions
+            ends_at = subscription_obj.get('current_period_end')
+            if not ends_at:
+                try:
+                    items = (subscription_obj.get('items') or {}).get('data') or []
+                    ends_at = items[0].get('current_period_end') if items else None
+                    source = 'item.current_period_end'
+                except Exception:
+                    ends_at = None
+                    source = 'none'
+            else:
+                source = 'subscription.current_period_end'
+
             subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
+            print(f"🧭 checkout.session.completed: ends_at={ends_at} source={source} sub={subscription_id}")
 
             cursor.execute("""
                 UPDATE users 
                 SET plan = %s, subscription_id = %s, stripe_customer_id = %s, subscription_end_date = %s, downgrade_to = NULL
                 WHERE id = %s
             """, (new_plan, subscription_id, customer_id, subscription_end_date, int(user_id)))
+            updated = cursor.rowcount
             conn.commit()
 
-            print(f"✅ Plan updated: user {user_id} → {new_plan}")
-            print(f"📅 Next Billing Date: {subscription_end_date}")
+            print(f"✅ checkout.session.completed persisted for user {user_id} (rows={updated})")
+            print(f"📅 Next Billing Date (UTC): {subscription_end_date}")
+
+
 
         elif event['type'] == 'customer.subscription.updated':
             from datetime import datetime
             subscription = event['data']['object']
             stripe_customer_id = subscription.get('customer')
             cancel_at_end = subscription.get("cancel_at_period_end")
-            current_price_id = subscription['items']['data'][0]['price']['id']
+            subscription_id = subscription.get('id')
 
-            if not stripe_customer_id:
-                print("⚠️ Missing Stripe customer ID in subscription.updated")
+            if not subscription_id:
+                print("⚠️ Missing subscription.id in subscription.updated")
                 return '', 200
 
-            items_data = subscription.get('items', {}).get('data', [])
-            ends_at = items_data[0].get("current_period_end") if items_data else None
+            # There is no email in this event. If needed, we can retrieve the customer to get it.
+            customer_email = None
+            try:
+                if stripe_customer_id:
+                    cust = stripe.Customer.retrieve(stripe_customer_id)
+                    customer_email = cust.get('email')
+            except Exception as _e:
+                pass
+
+            ends_at = subscription.get('current_period_end')
+            source = 'subscription.current_period_end'
+            if not ends_at:
+                try:
+                    items = (subscription.get('items') or {}).get('data') or []
+                    ends_at = items[0].get('current_period_end') if items else None
+                    source = 'item.current_period_end'
+                except Exception:
+                    ends_at = None
+                    source = 'none'
+
             subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
+            print(f"🧭 subscription.updated: ends_at={ends_at} source={source} sub={subscription_id} cancel_at_end={cancel_at_end}")
 
-            cursor.execute("""
-                UPDATE users 
-                SET subscription_end_date = %s
-                WHERE stripe_customer_id = %s
-            """, (subscription_end_date, stripe_customer_id))
+            # Update end date using the best key we have
+            rows_updated = 0
+            if stripe_customer_id:
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_end_date = %s
+                    WHERE stripe_customer_id = %s
+                """, (subscription_end_date, stripe_customer_id))
+                rows_updated = cursor.rowcount
+
+            if rows_updated == 0:
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_end_date = %s
+                    WHERE subscription_id = %s
+                """, (subscription_end_date, subscription_id))
+                rows_updated = cursor.rowcount
+
+            # 🔑 Final fallback: try matching by email if no match yet
+            if rows_updated == 0:
+                customer_email = invoice.get('customer_email') or ((invoice.get('customer_details') or {}).get('email'))
+                if customer_email:
+                    cursor.execute("""
+                        UPDATE users
+                        SET subscription_end_date = %s
+                        WHERE email = %s
+                    """, (subscription_end_date, customer_email))
+                    rows_updated = cursor.rowcount
+
+                    # If matched, backfill stripe_customer_id and subscription_id for future events
+                    if rows_updated > 0:
+                        if stripe_customer_id:
+                            cursor.execute("""
+                                UPDATE users
+                                SET stripe_customer_id = %s
+                                WHERE email = %s AND (stripe_customer_id IS NULL OR stripe_customer_id = '')
+                            """, (stripe_customer_id, customer_email))
+                        if subscription_id:
+                            cursor.execute("""
+                                UPDATE users
+                                SET subscription_id = %s
+                                WHERE email = %s AND (subscription_id IS NULL OR subscription_id = '')
+                            """, (subscription_id, customer_email))
+                        print(f"🧷 Fallback matched by email={customer_email} and backfilled IDs.")
+
             conn.commit()
+            print(f"✅ invoice.* updated end_date={subscription_end_date} rows={rows_updated} (cust={stripe_customer_id}, sub={subscription_id})")
 
-            print(f"📅 Subscription end date updated to {subscription_end_date} for customer {stripe_customer_id}")
+            # Find user_id for downgrade_to update
+            cursor.execute("SELECT id FROM users WHERE stripe_customer_id = %s", (stripe_customer_id,))
+            row = cursor.fetchone()
+            if not row:
+                cursor.execute("SELECT id FROM users WHERE subscription_id = %s", (subscription_id,))
+                row = cursor.fetchone()
+            if not row and customer_email:
+                cursor.execute("SELECT id FROM users WHERE email = %s", (customer_email,))
+                row = cursor.fetchone()
+                if row:
+                    print(f"🧷 Found user by email={customer_email}")
+
+            if not row:
+                print(f"⚠️ No user found for cust={stripe_customer_id} or sub={subscription_id} (and no email match)")
+                return '', 200
+
+            user_id = row['id']
 
             if cancel_at_end:
-                price_map = {
-                    "price_1RSVeL2MKajKZrXP4yIxSw58": "pro",
-                    "price_1RSVe72MKajKZrXPrsuvcvnO": "plus"
-                }
-                current_plan_name = price_map.get(current_price_id, "unknown")
-                downgrade_to = "free"
+                cursor.execute("UPDATE users SET downgrade_to = %s WHERE id = %s", ('free', user_id))
+                print(f"📌 Pending downgrade saved for user {user_id} (cancel_at_period_end=True)")
+            else:
+                cursor.execute("UPDATE users SET downgrade_to = NULL WHERE id = %s", (user_id,))
+                print(f"✅ Cleared pending downgrade for user {user_id} (cancel_at_period_end=False)")
 
-                cursor.execute("SELECT id FROM users WHERE stripe_customer_id = %s", (stripe_customer_id,))
-                row = cursor.fetchone()
+            conn.commit()
 
-                if not row:
-                    print(f"⚠️ No user found with customer_id={stripe_customer_id}")
-                    return '', 200
 
-                user_id = row['id']
-                cursor.execute("UPDATE users SET downgrade_to = %s WHERE id = %s", (downgrade_to, user_id))
-                conn.commit()
 
-                print(f"📌 Saved downgrade_to='{downgrade_to}' for user {user_id} (currently on {current_plan_name}, cancel_at_period_end=True)")
+        elif event['type'] == 'customer.subscription.created':
+            from datetime import datetime
+            subscription = event['data']['object']
+            stripe_customer_id = subscription.get('customer')
+            subscription_id = subscription.get('id')
+
+            # ⚙️ Compute ends_at with fallbacks
+            ends_at = subscription.get('current_period_end')
+            source = 'subscription.current_period_end'
+            if not ends_at:
+                try:
+                    items = (subscription.get('items') or {}).get('data') or []
+                    ends_at = items[0].get('current_period_end') if items else None
+                    source = 'item.current_period_end'
+                except Exception:
+                    ends_at = None
+                    source = 'none'
+
+            subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
+            print(f"🧭 subscription.created: ends_at={ends_at} source={source} sub={subscription_id}")
+
+            # Update by customer first, then subscription_id if needed
+            rows_updated = 0
+            if stripe_customer_id:
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_end_date = %s
+                    WHERE stripe_customer_id = %s
+                """, (subscription_end_date, stripe_customer_id))
+                rows_updated = cursor.rowcount
+
+            if rows_updated == 0 and subscription_id:
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_end_date = %s
+                    WHERE subscription_id = %s
+                """, (subscription_end_date, subscription_id))
+                rows_updated = cursor.rowcount
+
+            conn.commit()
+            print(f"✅ subscription.created persisted end_date={subscription_end_date} rows={rows_updated} (cust={stripe_customer_id}, sub={subscription_id})")
+
+
+
+        elif event['type'] in ('invoice.payment_succeeded', 'invoice.paid'):
+            # Deep debug for renewal → refresh subscription_end_date
+            from datetime import datetime
+
+            invoice = event['data']['object']
+
+            # --- Debug: raw keys we rely on ---
+            try:
+                print("🧾 invoice.id:", invoice.get('id'))
+                print("🧾 invoice.customer:", invoice.get('customer'))
+                print("🧾 invoice.customer_email:", invoice.get('customer_email'))
+                print("🧾 invoice.customer_details.email:", (invoice.get('customer_details') or {}).get('email'))
+                print("🧾 invoice.subscription (top-level):", invoice.get('subscription'))
+                _parent = invoice.get('parent') or {}
+                _sub_details = (_parent.get('subscription_details') or {})
+                print("🧾 invoice.parent.subscription_details.subscription:", _sub_details.get('subscription'))
+
+                # Also show the first line’s subscription path (newer API shapes)
+                lines = (invoice.get('lines') or {}).get('data') or []
+                if lines:
+                    parent0 = (lines[0].get('parent') or {})
+                    sid = (parent0.get('subscription_item_details') or {}).get('subscription')
+                    print("🧾 invoice.lines[0].parent.subscription_item_details.subscription:", sid)
+                else:
+                    print("🧾 invoice.lines: <empty>")
+            except Exception as e:
+                print("⚠️ Debug print (invoice keys) failed:", e)
+
+            stripe_customer_id = invoice.get('customer')
+            customer_email = invoice.get('customer_email') or ((invoice.get('customer_details') or {}).get('email'))
+
+            # Robust subscription id extraction
+            subscription_id = (
+                invoice.get('subscription')
+                or ((invoice.get('parent') or {}).get('subscription_details') or {}).get('subscription')
+            )
+            if not subscription_id:
+                try:
+                    lines = (invoice.get('lines') or {}).get('data') or []
+                    if lines:
+                        parent = (lines[0].get('parent') or {})
+                        sid_details = parent.get('subscription_item_details') or {}
+                        subscription_id = sid_details.get('subscription')
+                except Exception:
+                    subscription_id = None
+
+            print("🔎 Extracted subscription_id:", subscription_id)
+
+            if not subscription_id:
+                print("⚠️ invoice.* event missing subscription id; cannot update end date.")
+            else:
+                try:
+                    # Pull subscription to get current_period_end
+                    sub = stripe.Subscription.retrieve(subscription_id)
+
+                    # Prefer subscription.current_period_end; fall back to item.current_period_end
+                    ends_at = sub.get('current_period_end')
+                    source = 'subscription.current_period_end'
+                    if not ends_at:
+                        try:
+                            items = (sub.get('items') or {}).get('data') or []
+                            ends_at = items[0].get('current_period_end') if items else None
+                            source = 'item.current_period_end'
+                        except Exception:
+                            ends_at = None
+                            source = 'none'
+
+                    subscription_end_date = datetime.utcfromtimestamp(ends_at).isoformat() if ends_at else None
+                    print(f"🧭 invoice renewal: ends_at={ends_at} source={source} sub={subscription_id}")
+                    print(f"🧭 computed subscription_end_date (UTC ISO): {subscription_end_date}")
+
+                    # --- Debug: show what rows exist BEFORE updates ---
+                    def _dbg_select(label, sql, params):
+                        try:
+                            cursor.execute(sql, params)
+                            rows = cursor.fetchall()
+                            print(f"🔍 {label} → {len(rows)} row(s)")
+                            for r in rows:
+                                print("   •", dict(r) if isinstance(r, dict) else r)
+                        except Exception as e:
+                            print(f"⚠️ Debug select failed for {label}:", e)
+
+                    _dbg_select(
+                        "BEFORE: by stripe_customer_id",
+                        "SELECT id, email, plan, stripe_customer_id, subscription_id, subscription_end_date FROM users WHERE stripe_customer_id = %s",
+                        (stripe_customer_id,)
+                    )
+                    _dbg_select(
+                        "BEFORE: by subscription_id",
+                        "SELECT id, email, plan, stripe_customer_id, subscription_id, subscription_end_date FROM users WHERE subscription_id = %s",
+                        (subscription_id,)
+                    )
+                    if customer_email:
+                        _dbg_select(
+                            "BEFORE: by email",
+                            "SELECT id, email, plan, stripe_customer_id, subscription_id, subscription_end_date FROM users WHERE email = %s",
+                            (customer_email,)
+                        )
+
+                    # --- Perform updates with per-step rowcount logging ---
+                    total_updated = 0
+
+                    if stripe_customer_id:
+                        cursor.execute("""
+                            UPDATE users
+                            SET subscription_end_date = %s
+                            WHERE stripe_customer_id = %s
+                        """, (subscription_end_date, stripe_customer_id))
+                        print("🧱 UPDATE by stripe_customer_id rowcount:", cursor.rowcount)
+                        total_updated += cursor.rowcount
+
+                    if total_updated == 0:
+                        cursor.execute("""
+                            UPDATE users
+                            SET subscription_end_date = %s
+                            WHERE subscription_id = %s
+                        """, (subscription_end_date, subscription_id))
+                        print("🧱 UPDATE by subscription_id rowcount:", cursor.rowcount)
+                        total_updated += cursor.rowcount
+
+                    if total_updated == 0 and customer_email:
+                        cursor.execute("""
+                            UPDATE users
+                            SET subscription_end_date = %s
+                            WHERE email = %s
+                        """, (subscription_end_date, customer_email))
+                        print("🧱 UPDATE by email rowcount:", cursor.rowcount)
+                        if cursor.rowcount > 0:
+                            # Backfill IDs if missing to avoid future misses
+                            if stripe_customer_id:
+                                cursor.execute("""
+                                    UPDATE users
+                                    SET stripe_customer_id = %s
+                                    WHERE email = %s AND (stripe_customer_id IS NULL OR stripe_customer_id = '')
+                                """, (stripe_customer_id, customer_email))
+                                print("🧱 Backfill stripe_customer_id rowcount:", cursor.rowcount)
+                            if subscription_id:
+                                cursor.execute("""
+                                    UPDATE users
+                                    SET subscription_id = %s
+                                    WHERE email = %s AND (subscription_id IS NULL OR subscription_id = '')
+                                """, (subscription_id, customer_email))
+                                print("🧱 Backfill subscription_id rowcount:", cursor.rowcount)
+                            total_updated += 1  # mark as success
+
+                    conn.commit()
+                    print(f"✅ invoice.* updated end_date={subscription_end_date} total_updated_flag={total_updated}")
+
+                    # --- Debug: show rows AFTER updates ---
+                    _dbg_select(
+                        "AFTER: by stripe_customer_id",
+                        "SELECT id, email, plan, stripe_customer_id, subscription_id, subscription_end_date FROM users WHERE stripe_customer_id = %s",
+                        (stripe_customer_id,)
+                    )
+                    _dbg_select(
+                        "AFTER: by subscription_id",
+                        "SELECT id, email, plan, stripe_customer_id, subscription_id, subscription_end_date FROM users WHERE subscription_id = %s",
+                        (subscription_id,)
+                    )
+                    if customer_email:
+                        _dbg_select(
+                            "AFTER: by email",
+                            "SELECT id, email, plan, stripe_customer_id, subscription_id, subscription_end_date FROM users WHERE email = %s",
+                            (customer_email,)
+                        )
+
+                    # If still nothing updated, log a loud warning with the identifiers we tried
+                    if total_updated == 0:
+                        print("🚨 No user row was updated on invoice.*. Tried keys:",
+                              {"stripe_customer_id": stripe_customer_id, "subscription_id": subscription_id, "email": customer_email})
+
+                except Exception as e:
+                    print(f"❌ Failed to refresh end_date on invoice.* for sub={subscription_id}: {e}")
+
 
         elif event['type'] == 'customer.subscription.deleted':
             from datetime import datetime
@@ -1398,6 +1940,7 @@ def stripe_webhook():
                 SET plan = %s, subscription_id = NULL, subscription_end_date = %s, downgrade_to = NULL
                 WHERE id = %s
             """, (new_plan, subscription_end_date, user_id))
+            updated = cursor.rowcount
 
             # 🔥 Only enforce max_total now
             limits = PLAN_FEATURES.get(new_plan, {'max_total': 1})
@@ -1425,7 +1968,7 @@ def stripe_webhook():
                 print(f"🗑️ Deleted {len(ids_to_delete)} newsletters due to total limit.")
 
             conn.commit()
-            print(f"✅ Downgraded user {user_id} to {new_plan} after subscription end.")
+            print(f"✅ Downgraded user {user_id} to {new_plan} after subscription end. (rows={updated})")
             print(f"📅 Downgrade applied from webhook on {subscription_end_date}")
 
         cursor.close()
@@ -1446,6 +1989,11 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 
 @app.route('/reviews')
 def reviews():
+    # Require login
+    if "user_id" not in session:
+        flash("Please log in to view reviews.")
+        return redirect(url_for("login"))
+
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -1454,6 +2002,7 @@ def reviews():
 
     conn.close()
     return render_template('reviews.html', reviews=reviews)
+
 
 @app.route('/reviews/new')
 def new_review():
