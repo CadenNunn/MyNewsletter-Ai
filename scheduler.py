@@ -104,7 +104,7 @@ def send_email(to_email, subject, html_content):
     email = sib_api_v3_sdk.SendSmtpEmail(
         to=[{"email": to_email}],
         template_id=int(BREVO_TEMPLATE_ID),
-        sender={"name": "Memoraid", "email": "no-reply@memoraidai.com"},
+        sender={"name": "Memoraid", "email": "no-reply@mynewsletterai.com"},
         params={
             "title": subject,
             "content": html_content
