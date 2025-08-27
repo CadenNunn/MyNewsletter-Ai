@@ -32,6 +32,14 @@ def write_study_email(
     position_in_plan,
     past_content=None
 ):
+    """
+    Refined deep-dive writer:
+      - Prevents repetition across sections: each section must cover a unique facet of the subtopic.
+      - Renames 'Quick Win' → context-driven title ('Practice Set' if quiz, 'Flash Drill' if flashcards, else 'Case Check').
+      - Enforces 'upper-division contract': no elementary filler; focus on mechanisms, regulators, exceptions, and exam traps.
+    """
+
+    # --- Past-content guardrail ---
     past_note = f"""
 Avoid repeating any ideas, questions, or examples already written for this course.
 
@@ -40,12 +48,28 @@ Avoid repeating any ideas, questions, or examples already written for this cours
 === END PAST CONTENT ===
 """ if past_content else ""
 
+    # --- Section descriptions tuned for variety ---
     section_descriptions = {
-        "summary": "- Write a focused summary of the key idea, assuming the student has already encountered the material. Use clear, intelligent phrasing that reinforces understanding rather than teaching from scratch.",
-        "example": "- Provide a detailed, creative real-life analogy or scenario that helps clarify the concept. Avoid academic jargon—this should feel vivid, relatable, and memorable.",
-        "quiz": "- Create 5 challenging multiple-choice questions. At least 2 should involve application or reasoning (not pure recall). Include an Answer Key with brief rationales.",
-        "flashcards": "- Generate 5 flashcards in 'Front — Back' format focusing on core facts, keywords, or ideas essential for recall. Do not repeat quiz items; make them complementary.",
-        "suggested reading": "- Recommend 2–3 realistic resources (e.g., textbook chapter, 'Khan Academy article on ...', 'CrashCourse video on ...'). Do not fabricate URLs; provide titles/descriptions only."
+        "summary": (
+            "- Write a deep explanation of the subtopic’s **mechanism and logic** (e.g., steps, regulators, driving forces). "
+            "Do not just define; unpack *how and why* it works. Include at least one non-obvious insight or exception."
+        ),
+        "example": (
+            "- Give a **realistic applied scenario** where the subtopic plays out (e.g., mutation, experimental condition, clinical case). "
+            "Explain the reasoning chain to the outcome. Must feel different from summary — no rephrasing."
+        ),
+        "quiz": (
+            "- Write 5 challenging multiple-choice questions that test **application and reasoning** (not recall). "
+            "Ensure they hit dimensions not already covered in the summary or example. Include an Answer Key with 1–2 line rationales."
+        ),
+        "flashcards": (
+            "- Write 6–8 flashcards targeting **different dimensions** of the subtopic: one on mechanism, one on regulators, "
+            "one on experimental detection, one on pathological consequence, etc. Avoid duplicating quiz or summary."
+        ),
+        "suggested reading": (
+            "- Suggest 2–3 advanced, realistic study resources (textbook sections, lecture names, or well-known video series). "
+            "Each resource must complement gaps left by the sections above."
+        ),
     }
 
     requested_blocks = "\n".join([
@@ -53,65 +77,160 @@ Avoid repeating any ideas, questions, or examples already written for this cours
         for ct in content_types if ct.lower() in section_descriptions
     ])
 
+    # --- First email guarantee (renamed Quick Win) ---
+    is_first_email = (int(position_in_plan) == 1)
+    if is_first_email:
+        practice_block_title = (
+            "Practice Set" if "quiz" in [ct.lower() for ct in content_types]
+            else "Flash Drill" if "flashcards" in [ct.lower() for ct in content_types]
+            else "Case Check"
+        )
+        practice_spec = f"""
+- Create a top-of-email <h2>{practice_block_title}</h2> section. 
+- If quiz selected: include 3 ultra-targeted MCQs with compact worked solutions.
+- If flashcards selected: include 5 high-yield flashcards across different dimensions.
+- Else: 2 applied problems (short-answer style) that probe reasoning, not recall.
+- Keep it concise, advanced, and directly usable today.
+"""
+        practice_block_html = f"<h2>{practice_block_title}</h2>\n<p>Targeted practice content appears here.</p>"
+    else:
+        practice_spec = ""
+        practice_block_html = ""
+
+    # --- Teaser for next narrow slice ---
+    next_teaser = (
+        "Next email zooms in on another advanced facet — regulators, edge-cases, or exam traps you must master."
+    )
+
+    # --- Prompt enforcing non-redundancy + depth ---
+    # --- STRUCTURE HTML skeleton based on selected sections ---
+    selected = [ct.lower() for ct in content_types]
+
+    sections_html = []
+
+    if "summary" in selected:
+        sections_html.append(
+            "<h2>Summary</h2>\n"
+            "<ul>\n"
+            "  <li><strong>Mechanism:</strong> ...</li>\n"
+            "  <li><strong>Regulation:</strong> ...</li>\n"
+            "  <li><strong>Exception/Pitfall:</strong> ...</li>\n"
+            "</ul>"
+        )
+
+    if "example" in selected:
+        sections_html.append(
+            "<h2>Example</h2>\n"
+            "<p><strong>Scenario:</strong> ...</p>\n"
+            "<p><strong>Task:</strong> ...</p>\n"
+            "<p><strong>Reasoning:</strong> ...</p>\n"
+            "<p><strong>Conclusion:</strong> ...</p>"
+        )
+
+    if "quiz" in selected:
+        sections_html.append(
+            "<h2>Quiz</h2>\n"
+            "<ol>\n"
+            "  <li>Q1 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
+            "  <li>Q2 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
+            "  <li>Q3 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
+            "  <li>Q4 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
+            "  <li>Q5 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
+            "</ol>\n"
+            "<p><strong>Answers:</strong> A1..., A2..., A3..., A4..., A5...</p>"
+        )
+
+    if "flashcards" in selected:
+        sections_html.append(
+            "<h2>Flashcards</h2>\n"
+            "<ul>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "</ul>"
+        )
+
+    if "suggested reading" in selected:
+        sections_html.append(
+            "<h2>Suggested Reading</h2>\n"
+            "<ul>\n"
+            "  <li>Title/Section — why it helps</li>\n"
+            "  <li>Title/Section — why it helps</li>\n"
+            "  <li>Title/Section — why it helps</li>\n"
+            "</ul>"
+        )
+
+    if sections_html:
+        structure_html = "\n\n".join(sections_html)
+    else:
+        # Fallback if nothing selected
+        structure_html = (
+            "<h2>Summary</h2>\n"
+            "<ul>\n"
+            "  <li><strong>Mechanism:</strong> ...</li>\n"
+            "  <li><strong>Regulation:</strong> ...</li>\n"
+            "  <li><strong>Exception/Pitfall:</strong> ...</li>\n"
+            "</ul>\n\n"
+            "<h2>Flashcards</h2>\n"
+            "<ul>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "  <li>Front — Back</li>\n"
+            "</ul>"
+        )
+
+
     prompt = f"""
-You are an expert study strategist creating a study support email for a student enrolled in a course titled "{plan_title}".
+You are an expert study strategist creating a study email for a course titled "{plan_title}".
+This is email {position_in_plan}. Today's declared focus is: "{section_title}"
+The broader course/topics context is: "{topics}"
 
-This is email {position_in_plan} of their personalized learning series.
-Today's focus is: "{section_title}"
-The course covers: "{topics}"
+Task: produce exam-grade reinforcement at **upper-division level**.
 
-Your job is to reinforce—not introduce—the material. Assume the student has already seen the content in class and is now reviewing or deepening their understanding.
+Rule 1 — Narrow focus: Choose ONE specific high-yield subtopic (e.g., folding pathway step, chaperone role, disease misfolding mechanism). Use it consistently throughout.
+Rule 2 — Non-redundancy: Each section must cover a **different dimension** of the subtopic (mechanism vs application vs pitfalls vs practice).
+Rule 3 — Upper-division contract: Avoid elementary filler. Anchor content in enzymes, pathways, regulators, kinetics, energetics, experimental methods, or pathological relevance.
 
-Start with a brief (2–3 sentence) motivational introduction that previews the day's topic in an engaging way.
+{"Begin with an immediate high-utility practice block for the subtopic." if is_first_email else ""}
+{practice_spec}
 
 Then, based on the student's selected content preferences, include ONLY the following sections:
-{requested_blocks}
+{requested_blocks if requested_blocks.strip() else "- If no sections selected, include Summary + Flashcards."}
 
-Finish with a short (2–3 sentence) conclusion that reinforces the topic and motivates the student to continue studying.
+Conclude with 2–3 sentences that recap the unique subtopic insights and tease what's next:
+- Next Up: {next_teaser}
 
-Use this structure:
+STRUCTURE (use HTML tags exactly):
 <h1>{section_title}</h1>
-<p>Short motivational intro.</p>
+{practice_block_html}
+<p>Short motivational intro (2–3 sentences) that names the chosen subtopic.</p>
 
-<h2>Summary</h2>
-<p>...</p>
-
-<h2>Example</h2>
-<p>...</p>
-
-<h2>Quiz</h2>
-<p>Q1...</p>
-...
-<p><strong>Answers:</strong></p>
-<p>A1...</p>
-
-<h2>Flashcards</h2>
-<p>Front — Back</p>
-
-<h2>Suggested Reading</h2>
-<p>Resource Title — 1 sentence summary</p>
+{structure_html}
 
 <h2>Conclusion</h2>
-<p>Brief motivational outro and recap.</p>
+<p>Recap + Next Up teaser.</p>
 
-{past_note}
 
-Requirements:
-- Include only the content types the user selected; DO NOT include sections the user did not select.
-- Write with a confident, encouraging, and thoughtful tone.
-- Prioritize relevance, depth, and usefulness. Don’t oversimplify.
-- Return clean, valid HTML using only <h1>, <h2>, and <p> tags.
-- No inline styles, tables, markdown, or extra formatting.
-- Return only the HTML. No notes or explanations.
+
+Global requirements:
+- Each section must present **new information** (no overlaps, no paraphrasing).
+- Write at advanced college level (biochemistry/upper-division). 
+- Return valid HTML using <h1>, <h2>, <p>, <ul>, <ol>, <li>, and inline <strong>. No tables or inline styles.
+
 """
 
     response = client.chat.completions.create(
-        model="gpt-4",  # For higher quality you can use "gpt-4o"; keep as-is if you prefer
+        model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.7
+        temperature=0.5
     )
 
-    # --- Light QA: strip rogue code fences/overruns and cap length ---
+    # --- Light QA ---
     raw_html = response.choices[0].message.content.strip()
     if raw_html.startswith("```"):
         raw_html = raw_html.strip("`").strip()
