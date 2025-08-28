@@ -8,6 +8,17 @@ import numpy as np
 from PIL import Image
 from utils.syllabus_ai_prompts import extract_syllabus_title_and_topics
 
+import shutil
+import pytesseract
+
+_tess = shutil.which("tesseract")
+if _tess:
+    pytesseract.pytesseract.tesseract_cmd = _tess
+else:
+    # Common path on Debian/Ubuntu base images used by Render
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
+
 
 def preprocess_image_for_ocr(pil_image):
     # Convert to grayscale

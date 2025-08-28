@@ -257,6 +257,25 @@ from flask import send_from_directory
 def serve_adminer():
     return send_from_directory('.', 'adminer.html')
 
+import shutil, subprocess
+from flask import jsonify
+
+@app.route("/debug/binaries")
+def debug_binaries():
+    def try_run(cmd):
+        try:
+            return subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True).splitlines()[0]
+        except Exception as e:
+            return f"ERR: {e}"
+
+    return jsonify({
+        "which.tesseract": shutil.which("tesseract"),
+        "which.pdftotext": shutil.which("pdftotext"),
+        "tesseract_version": try_run(["tesseract", "--version"]),
+        "pdftotext_version": try_run(["pdftotext", "-v"]),
+    })
+
+
 
 #---------- Scheduler auto delete ------------
 import time
