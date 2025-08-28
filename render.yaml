@@ -2,14 +2,8 @@ services:
   - type: web
     name: mynewsletter-ai
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
-
-services:
-  - type: web
-    name: newsletter
-    env: python
     buildCommand: |
-      apt-get update && apt-get install -y tesseract-ocr poppler-utils
+      apt-get update && apt-get install -y --no-install-recommends tesseract-ocr poppler-utils
       pip install -r requirements.txt
     startCommand: gunicorn app:app
+
