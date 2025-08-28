@@ -6,6 +6,11 @@ import pytesseract, cv2, numpy as np
 from PIL import Image
 from utils.materials_ai_prompts import extract_material_title_and_topics
 
+import shutil
+import pytesseract
+
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
 def preprocess_image_for_ocr(pil_image):
     img = np.array(pil_image.convert('L'))
     _, img = cv2.threshold(img, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
