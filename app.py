@@ -70,8 +70,124 @@ app.config['SESSION_REDIS'] = redis.from_url(os.getenv('REDIS_URL'))
 # Initialize Flask-Session
 Session(app)
 
-from scheduler import scheduler
-scheduler.start()
+# --- DB helpers must be defined BEFORE scheduler tries to use them ---
+from flask import request, render_template, redirect
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+def _is_local_db(url: str) -> bool:
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or '').lower()
+        return host in ('localhost', '127.0.0.1', '::1')
+    except Exception:
+        return False
+
+
+def pg_connect(dict_cursor: bool = True):
+    """Centralized Postgres connection with TLS + TCP keepalives."""
+    kwargs = {
+        "dsn": DATABASE_URL,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    }
+    # Only require SSL when NOT connecting to localhost
+    if not _is_local_db(DATABASE_URL):
+        kwargs["sslmode"] = "require"
+
+    if dict_cursor:
+        kwargs["cursor_factory"] = psycopg2.extras.RealDictCursor
+    return psycopg2.connect(**kwargs)
+
+
+def ensure_indexes_once():
+    """Speed up due-email scans and dashboard/reschedule queries."""
+    try:
+        conn = pg_connect(dict_cursor=False)
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_emails_due
+            ON emails (send_date)
+            WHERE sent = false
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_emails_plan_sent_pos
+            ON emails (plan_id, sent, position_in_plan)
+        """)
+        conn.commit()
+    except Exception as e:
+        print("⚠️ ensure_indexes_once failed:", e)
+    finally:
+        try:
+            cur.close(); conn.close()
+        except Exception:
+            pass
+
+ensure_indexes_once()
+
+import threading
+import atexit
+
+RUN_SCHEDULER = os.getenv("RUN_SCHEDULER", "0") == "1"
+
+def _acquire_scheduler_lock():
+    """
+    Use a Postgres advisory lock so only ONE process/thread becomes the scheduler,
+    even if something accidentally spawns more than one worker someday.
+    """
+    try:
+        conn = pg_connect(dict_cursor=False)  # uses DATABASE_URL + keepalives
+        cur = conn.cursor()
+        # Pick a unique 64-bit key for your app (hash of 'memoraid-scheduler' for example)
+        cur.execute("SELECT pg_try_advisory_lock(730563707911)")
+
+        got = cur.fetchone()[0]
+        if got:
+            print("🔒 Acquired scheduler advisory lock.")
+            return conn, cur  # keep connection open to hold the lock
+        else:
+            cur.close()
+            conn.close()
+            print("⏸️ Another instance holds the scheduler lock. Not starting scheduler here.")
+            return None, None
+    except Exception as e:
+        print("⚠️ Failed to acquire scheduler lock:", e)
+        return None, None
+
+def _start_scheduler_if_leader():
+    from scheduler import scheduler
+    lock_conn, lock_cur = _acquire_scheduler_lock()
+    if not lock_conn:
+        return  # not the leader
+
+    # Start scheduler in this process (background thread)
+    scheduler.start()
+    print("🟢 Scheduler started in web service.")
+
+    @atexit.register
+    def _release_lock():
+        try:
+            # advisory lock auto-releases on connection close, but be explicit
+            if lock_cur:
+                lock_cur.close()
+            if lock_conn:
+                lock_conn.close()
+            print("🔓 Scheduler advisory lock released.")
+        except Exception:
+            pass
+
+if RUN_SCHEDULER:
+    # Run in a daemon thread to avoid blocking Flask/Gunicorn boot
+    threading.Thread(target=_start_scheduler_if_leader, daemon=True).start()
+    print("🟡 Scheduler init thread launched (will start only if lock acquired).")
+else:
+    print("🟡 Scheduler disabled (RUN_SCHEDULER=0).")
+
+
 
 
 # Plan-based limits (subs-first)
@@ -109,12 +225,6 @@ def _slider_max_for_user(features: dict, topics_len: int) -> int:
         # Pro: give plenty of headroom; keep finite for slider UX
         return max(topics_len, 60)  # tweak later if you want
     return max(1, cap)
-
-
-def _get_user_plan_features(db, user_id: int):
-    user = db.query(User).filter(User.id == user_id).first()
-    plan_name = (user.plan or 'free').lower() if user else 'free'
-    return PLAN_FEATURES.get(plan_name, PLAN_FEATURES['free'])
 
 def _allowed_email_options(features: dict, topics_len: int):
     sch = features.get('school', {})
@@ -1980,12 +2090,6 @@ def stripe_webhook():
     return '', 200
 
 #-------------- Reviews ------------------
-from flask import request, render_template, redirect
-import psycopg2
-import psycopg2.extras
-import os
-
-DATABASE_URL = os.getenv('DATABASE_URL')
 
 @app.route('/reviews')
 def reviews():
@@ -1994,12 +2098,13 @@ def reviews():
         flash("Please log in to view reviews.")
         return redirect(url_for("login"))
 
-    conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    conn = pg_connect()  # uses the ONE global pg_connect defined earlier
+    cursor = conn.cursor()
 
     cursor.execute('SELECT * FROM reviews ORDER BY id DESC')
     reviews = cursor.fetchall()
 
+    cursor.close()
     conn.close()
     return render_template('reviews.html', reviews=reviews)
 
@@ -2007,6 +2112,7 @@ def reviews():
 @app.route('/reviews/new')
 def new_review():
     return render_template('leave_review.html')
+
 
 @app.route('/reviews/new', methods=['POST'])
 def submit_review():
@@ -2017,13 +2123,14 @@ def submit_review():
     if not name or not stars:
         return "Missing name or star rating", 400
 
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = pg_connect(dict_cursor=False)
     cursor = conn.cursor()
     cursor.execute(
         'INSERT INTO reviews (name, stars, comment) VALUES (%s, %s, %s)',
         (name, int(stars), comment)
     )
     conn.commit()
+    cursor.close()
     conn.close()
 
     return redirect('/reviews')
