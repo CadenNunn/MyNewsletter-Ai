@@ -13,39 +13,47 @@ from PIL import Image
 from utils.materials_ai_prompts import extract_material_title_and_topics
 
 
-def _resolve_tesseract_cmd() -> str:
+# Lazy + safe OCR init: never crash import if Tesseract is missing
+_OCR_AVAILABLE = False
+
+def _try_init_tesseract() -> bool:
     """
-    Resolve the tesseract binary path deterministically.
-    Order:
-      1) TESSERACT_CMD env var (explicit override)
-      2) shutil.which('tesseract') (PATH)
-      3) Common Homebrew/Intel fallbacks
+    Try to locate Tesseract and configure pytesseract.
+    Returns True if available, False otherwise.
     """
+    global _OCR_AVAILABLE
+    if _OCR_AVAILABLE:
+        return True
+
     env_path = os.environ.get("TESSERACT_CMD")
     if env_path and os.path.exists(env_path):
-        return env_path
+        pytesseract.pytesseract.tesseract_cmd = env_path
+        _OCR_AVAILABLE = True
+        return True
 
     which_path = shutil.which("tesseract")
     if which_path:
-        return which_path
+        pytesseract.pytesseract.tesseract_cmd = which_path
+        _OCR_AVAILABLE = True
+        return True
 
     candidates = [
-        "/opt/homebrew/bin/tesseract",  # Apple Silicon Homebrew (most likely for you)
+        "/usr/bin/tesseract",           # Debian/Ubuntu default (Render)
+        "/opt/homebrew/bin/tesseract",  # Apple Silicon Homebrew
         "/usr/local/bin/tesseract",     # Intel Homebrew
     ]
     for p in candidates:
         if os.path.exists(p):
-            return p
+            pytesseract.pytesseract.tesseract_cmd = p
+            _OCR_AVAILABLE = True
+            return True
 
-    # Final fail with clear message
-    raise RuntimeError(
-        "Tesseract binary not found. Install via Homebrew (`brew install tesseract`) "
-        "or set TESSERACT_CMD to the tesseract binary path."
-    )
+    return False
 
+def ocr_available() -> bool:
+    """Public check used by call sites to gate OCR work."""
+    return _try_init_tesseract()
 
-# Set the command once at import time so pytesseract uses the right binary
-pytesseract.pytesseract.tesseract_cmd = _resolve_tesseract_cmd()
 
 
 def preprocess_image_for_ocr(pil_image: Image.Image) -> Image.Image:
@@ -78,10 +86,12 @@ def extract_topics_from_material(file_content: bytes, filename: str):
             for page_number, page in enumerate(doc, start=1):
                 page_text = (page.get_text() or "").strip()
                 if page_text:
-                    # Text layer present — better fidelity and faster than OCR
+                    # Text layer present — better fidelity and faster
                     text += page_text + "\n"
-                else:
-                    # No text layer — rasterize page and OCR
+                    continue
+
+                # No text layer: try OCR only if available
+                if ocr_available():
                     images = convert_from_bytes(
                         file_content,
                         first_page=page_number,
@@ -90,6 +100,10 @@ def extract_topics_from_material(file_content: bytes, filename: str):
                     for img in images:
                         processed_img = preprocess_image_for_ocr(img)
                         text += pytesseract.image_to_string(processed_img) + "\n"
+                else:
+                    # OCR not available on this box; leave empty for this page
+                    text += ""
+
         finally:
             doc.close()
 
