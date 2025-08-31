@@ -1,0 +1,908 @@
+{% extends "base.html" %}
+{% block title %}{{ lesson.topic or (lesson.title or 'Lesson') }}{% endblock %}
+{% block content %}
+<section class="py-12 px-4 max-w-5xl mx-auto" x-data="lessonPage()">
+  <!-- Premium Header Card -->
+  <div class="rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-sm shadow-sm p-5 mb-4">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <div class="text-xs text-[var(--color-muted)]">
+          {% if lesson.send_date %}
+            <span data-utc="{{ lesson.send_date.isoformat() }}Z">Loading…</span>
+          {% else %}
+            Unscheduled
+          {% endif %}
+        </div>
+        <h1 class="heading-1 mt-1 flex items-center gap-3">
+          {{ lesson.topic or (lesson.title or 'Lesson') }}
+        </h1>
+        <div class="title-accent mt-2"></div>
+        <div class="mt-3 flex items-center gap-3 text-xs text-[var(--color-muted)]">
+          <span x-text="meta.readTime"></span>
+          <span>•</span>
+          <span x-text="meta.sectionCount + ' sections'"></span>
+          <span>•</span>
+          <span x-text="meta.words + ' words'"></span>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        {% set s = (lesson.status or 'unmarked') %}
+        <span class="inline-flex items-center px-2 py-1 rounded-md text-xs
+                     {% if s == 'complete' %}bg-green-100 text-green-700 border border-green-200{% elif s == 'needs_review' %}bg-yellow-100 text-yellow-700 border border-yellow-200{% elif s == 'incomplete' %}bg-red-100 text-red-700 border border-red-200{% else %}bg-gray-100 text-gray-600 border border-gray-200{% endif %}">
+          {{ s.replace('_',' ') }}
+        </span>
+        <a href="/dashboard/lessons" class="btn-ghost text-sm">← All Lessons</a>
+        <a href="/dashboard" class="btn-ghost text-sm">Dashboard</a>
+      </div>
+    </div>
+    <!-- Progress -->
+    <div class="mt-4 w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+      <div class="h-1.5 rounded-full school-accent transition-all" :style="`width: ${progress}%`"></div>
+    </div>
+  </div>
+
+
+
+  <!-- Sticky Tabs -->
+  <div class="sticky top-4 z-10 mb-6">
+    <div class="rounded-xl border border-gray-200 bg-white/80 backdrop-blur-sm p-1 shadow-sm overflow-x-auto">
+      <nav class="inline-flex items-center gap-1 min-w-full">
+        <template x-for="tab in tabs" :key="tab.key">
+          <button
+            class="px-3 py-2 text-sm rounded-lg transition"
+            :class="selected===tab.key
+                     ? 'school-tag font-semibold shadow-xs'
+                     : 'text-gray-600 hover:bg-gray-100'"
+            @click="select(tab.key)"
+            x-text="tab.label">
+          </button>
+        </template>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Visible Section -->
+  <div id="sectionMount"></div>
+
+  <!-- Footer Actions -->
+  <div class="mt-10 flex flex-wrap items-center gap-4">
+    {% set s = (lesson.status or 'unmarked') %}
+    <span class="inline-flex items-center px-2 py-1 rounded-md text-xs
+                 {% if s == 'complete' %}bg-green-100 text-green-700 border border-green-200{% elif s == 'needs_review' %}bg-yellow-100 text-yellow-700 border border-yellow-200{% elif s == 'incomplete' %}bg-red-100 text-red-700 border border-red-200{% else %}bg-gray-100 text-gray-600 border border-gray-200{% endif %}">
+      Status: {{ s.replace('_',' ') }}
+    </span>
+
+    <!-- Segmented status control (themed + gamified hover/tooltip) -->
+    {% set next_url = url_for('list_lessons', plan_id=lesson.plan_id) if lesson.plan_id else url_for('list_lessons') %}
+    <form method="POST"
+          action="{{ url_for('update_lesson_status', email_id=lesson.email_id) }}"
+          class="segmented inline-flex rounded-full overflow-hidden border border-[var(--color-border)] bg-white ring-1 ring-transparent hover:ring-[var(--color-accent-bg)]">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <button type="submit" name="status" value="complete"
+              class="seg-btn {% if s=='complete' %}seg-active{% endif %}"
+              data-kbd="C" aria-label="Mark Complete (C)">
+        ✓ Complete
+      </button>
+      <button type="submit" name="status" value="needs_review"
+              class="seg-btn {% if s=='needs_review' %}seg-active{% endif %}"
+              data-kbd="R" aria-label="Needs review (R)">
+        ☆ Needs review
+      </button>
+      <button type="submit" name="status" value="incomplete"
+              class="seg-btn {% if s=='incomplete' %}seg-active{% endif %}"
+              data-kbd="I" aria-label="Mark Incomplete (I)">
+        ◻︎ Incomplete
+      </button>
+    </form>
+
+
+
+    {% if lesson.html_content and 'Flashcards' in lesson.html_content %}
+      <!-- Themed Export dropdown -->
+      <div class="relative" x-data="{ open:false }">
+        <button type="button"
+                @click="open = !open"
+                @keydown.escape.window="open=false"
+                class="btn-export accent-gradient inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M3 14a1 1 0 001 1h12a1 1 0 001-1v-3h-2v2H5v-2H3v3zM11 3H9v6H6l4 4 4-4h-3V3z"/>
+          </svg>
+          Export
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-90" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.207l3.71-3.976a.75.75 0 111.08 1.04l-4.24 4.54a.75.75 0 01-1.08 0l-4.24-4.54a.75.75 0 01.02-1.06z"/></svg>
+        </button>
+        <div x-show="open" x-transition @click.outside="open=false"
+             class="menu absolute left-0 mt-2 min-w-[12rem] rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden z-10">
+          <a href="{{ url_for('download_flashcards', email_id=lesson.email_id) }}"
+             class="menu-item">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-80" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 012-2h4l4 4v10a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/><path d="M9 4v3a1 1 0 001 1h3"/></svg>
+            Download flashcards (.txt)
+          </a>
+          <a href="{{ url_for('download_flashcards_apkg', email_id=lesson.email_id) }}"
+             class="menu-item">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-80" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z"/><path d="M14 4v6h6"/></svg>
+            Download flashcards (.apkg)
+          </a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+
+  <!-- Hidden raw source (REQUIRED for parsing sections like Quiz) -->
+  <article id="rawLesson" class="hidden">
+    {{ lesson.html_content|safe }}
+  </article>
+</section>
+
+<style>
+  .fc-scene { perspective: 1200px; }
+  .fc-card { transform-style: preserve-3d; transition: transform 420ms cubic-bezier(.2,.8,.2,1); position: relative; }
+  .fc-card.flipped { transform: rotateY(180deg); }
+  .fc-face { position: absolute; inset: 0; backface-visibility: hidden; display:flex; align-items:center; justify-content:center; text-align:center; padding: 1.25rem; border-radius: 0.75rem; }
+  .fc-back { transform: rotateY(180deg); }
+  .is-stuck { box-shadow: 0 6px 16px -12px rgba(0,0,0,0.25); }
+
+  /* Quiz choice states (Duolingo vibe, but using theme) */
+  .choice { transition: transform 120ms ease, box-shadow 180ms ease; }
+  .choice:active { transform: scale(0.99); }
+  .choice-correct { box-shadow: 0 0 0 2px rgba(34,197,94,.25), 0 8px 24px -8px rgba(34,197,94,.3); }
+  .choice-incorrect { box-shadow: 0 0 0 2px rgba(239,68,68,.25), 0 8px 24px -8px rgba(239,68,68,.3); }
+  .choice-selected { box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
+
+  /* simple confetti container target */
+  #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+
+  /* Segmented control */
+  .segmented .seg-btn {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+    line-height: 1rem;
+    border-right: 1px solid var(--color-border);
+    background: #fff;
+    transition: background-color 150ms ease, color 150ms ease, transform 120ms ease;
+  }
+  .segmented .seg-btn:last-child { border-right: none; }
+  .segmented .seg-btn:hover { background: #F3F4F6; transform: translateY(-1px); }
+  .segmented .seg-active {
+    background-image: linear-gradient(90deg, var(--color-accent), var(--color-accent-dark));
+    color: #fff;
+    font-weight: 600;
+    border-right-color: rgba(0,0,0,0);
+  }
+
+  /* Export dropdown + items */
+  .btn-export { cursor: pointer; }
+  .accent-gradient {
+    background-image: linear-gradient(90deg, var(--color-accent), var(--color-accent-dark));
+    color: #fff;
+  }
+  .accent-gradient:hover { filter: saturate(1.05) brightness(1.02); }
+  .menu { backdrop-filter: saturate(120%) blur(2px); }
+  .menu-item {
+    display: flex; gap: 0.5rem; align-items: center;
+    padding: 0.625rem 0.875rem; font-size: 0.875rem;
+    color: var(--color-text); background: #fff;
+    border-bottom: 1px solid #eee;
+  }
+  .menu-item:last-child { border-bottom: none; }
+  .menu-item:hover { background: var(--color-accent-bg); color: var(--color-accent-dark); }
+
+  /* Tooltip for keyboard hints */
+  .kbd-tip {
+    position: fixed; z-index: 60; pointer-events: none;
+    background: rgba(17,24,39,0.92);
+    color: #fff; font-size: 12px; line-height: 1;
+    padding: 6px 8px; border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    transform: translate(-50%, -120%); white-space: nowrap;
+    opacity: 0; transition: opacity 120ms ease, transform 120ms ease;
+  }
+  .kbd-tip.show { opacity: 1; transform: translate(-50%, -140%); }
+  .kbd-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 6px; margin-left: 6px;
+    border-radius: 6px; background: #111827; color: #fff; font-weight: 700; font-size: 11px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+  }
+
+  /* Micro “pop” animation (gamified feedback) */
+  @keyframes popOnce {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.04); }
+    100% { transform: scale(1); }
+  }
+  .pop-once { animation: popOnce 260ms ease-out; }
+
+  .title-accent {
+    width: 72px; height: 4px; border-radius: 9999px;
+    background-image: linear-gradient(90deg, var(--color-accent), var(--color-accent-dark));
+  }
+  .quiz-progress {
+    width: 100%;
+    transform-origin: left center;
+    transition: transform 260ms ease;
+    will-change: transform;
+  }
+
+
+
+</style>
+
+
+
+
+
+
+<script>
+function lessonPage() {
+
+  return {
+    // state
+    sections: {},   // { key: {title, nodes[]} }
+    tabs: [],       // [{key,label}]
+    selected: null, // key
+    progress: 0,    // % across tabs
+    meta: { readTime: '', words: 0, sectionCount: 0 },
+    interactive: {
+      quiz: { blocks: [] },
+      flashcards: { cards: [], index: 0, face: 'front' }
+    },
+
+    // Alpine auto-runs this
+    init() {
+      const raw = document.getElementById('rawLesson');
+      if (!raw) return;
+
+      // Parse sections and build tabs
+      this._parseSections(raw);
+      const order = Object.keys(this.sections);
+      const prefer = order.find(k => /summary/i.test(this.sections[k].title)) || order[0] || null;
+      this.tabs = order.map(k => ({ key: k, label: this.sections[k].title }));
+      this.selected = prefer;
+
+      // Meta (words, read time, sections)
+      const fullText = this._stripTags(raw.innerHTML || '');
+      const words = fullText.split(/\s+/).filter(Boolean).length;
+      const minutes = Math.max(1, Math.round(words / 200));
+      this.meta.words = words;
+      this.meta.readTime = `${minutes} min read`;
+      this.meta.sectionCount = this.tabs.length;
+
+      // First render + progress
+      this._mountSelected();
+      this._updateProgress();
+
+      // Keyboard shortcuts for flashcards
+      window.addEventListener('keydown', (e) => {
+        if (this.selected !== 'flashcards') return;
+        if (e.code === 'Space') { e.preventDefault(); this.fcFlip(); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); this.fcNext(); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); this.fcPrev(); }
+      });
+
+      // Sticky tab shadow toggle
+      const sticky = document.querySelector('.sticky.top-4');
+      if (sticky) {
+        const onScroll = () => {
+          const stuck = (sticky.getBoundingClientRect().top <= 16);
+          sticky.firstElementChild?.classList.toggle('is-stuck', stuck);
+        };
+        onScroll();
+        window.addEventListener('scroll', onScroll, { passive: true });
+      }
+    },
+
+    select(key) {
+      if (this.selected !== key) {
+        this.selected = key;
+        this._mountSelected();
+        this._updateProgress();
+      }
+    },
+
+    _ankiHref() {
+      // Uses the server-rendered email_id in the page by reading from a data attr or by templating directly.
+      // Since we're in a Jinja template, we can just return the URL at render time.
+      return "{{ url_for('download_flashcards_apkg', email_id=lesson.email_id) }}";
+    },
+
+    _updateProgress() {
+      const idx = this.tabs.findIndex(t => t.key === this.selected);
+      const total = this.tabs.length || 1;
+      this.progress = Math.round(((idx + 1) / total) * 100);
+    },
+
+    // ---------- Build & Mount ----------
+    _parseSections(root) {
+      let cur = null;
+      Array.from(root.childNodes).forEach(node => {
+        if (node.nodeType === 1 && node.tagName === 'H2') {
+          if (cur) this._commitSection(cur);
+          cur = { title: node.textContent.trim(), nodes: [] };
+        } else if (cur && node.nodeType === 1) {
+          cur.nodes.push(node.cloneNode(true));
+        }
+      });
+      if (cur) this._commitSection(cur);
+    },
+    _commitSection(sect) {
+      const key = this._canonicalKey(sect.title);
+      this.sections[key] = sect;
+    },
+    _canonicalKey(title) {
+      const t = (title || '').trim().toLowerCase();
+      if (/\bsummary\b/.test(t)) return 'summary';
+      if (/\bexample\b/.test(t)) return 'example';
+      if (/\bquiz\b/.test(t)) return 'quiz';
+      if (/\bflashcards?\b/.test(t)) return 'flashcards';
+      if (/\bsuggested.*reading\b/.test(t)) return 'suggested-reading';
+      return t.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g,'');
+    },
+
+    _mountSelected() {
+      const mount = document.getElementById('sectionMount');
+      mount.innerHTML = '';
+
+      const skeleton = document.createElement('div');
+      skeleton.className = "rounded-2xl border border-gray-200 bg-white/70 animate-pulse h-40";
+      mount.appendChild(skeleton);
+
+      requestAnimationFrame(() => {
+        mount.innerHTML = '';
+        const sect = this.sections[this.selected];
+        if (!sect) { mount.innerHTML = '<div class="text-sm text-gray-500">No content.</div>'; return; }
+
+        if (this.selected === 'quiz') {
+          this._mountQuizSection(sect, mount);
+        } else if (this.selected === 'flashcards') {
+          this._mountFlashcardsSection(sect, mount);
+        } else {
+          // Better typography for Summary/Example
+          const isSummary = (this.selected === 'summary');
+          const isExample = (this.selected === 'example');
+          const card = document.createElement('div');
+          card.className = "rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm p-6 text-gray-900 shadow-md";
+          const h = document.createElement('h2');
+          h.className = "text-xl font-semibold mb-4";
+          h.textContent = sect.title;
+          card.appendChild(h);
+
+          // Wrap content with improved rhythm
+          const body = document.createElement('div');
+          body.className = "prose max-w-none leading-7 tracking-[0.01em]";
+          // Make paragraphs easier to scan
+          sect.nodes.forEach(n => {
+            if (n.tagName === 'P') {
+              n.classList.add('mb-4');
+            }
+            if (n.tagName === 'UL' || n.tagName === 'OL') {
+              n.classList.add('my-4');
+            }
+            body.appendChild(n);
+          });
+
+          // Add a soft divider and “Key points” style if lists exist
+          if (body.querySelector('ul, ol')) {
+            const divider = document.createElement('div');
+            divider.className = "my-5 h-px bg-gray-200";
+            card.appendChild(body);
+            card.appendChild(divider);
+
+            const hint = document.createElement('div');
+            hint.className = "text-xs text-[var(--color-muted)]";
+            hint.textContent = isSummary
+              ? "Tip: Skim the bullets first, then read the details."
+              : isExample
+                ? "Tip: Focus on the setup → action → outcome."
+                : "";
+            card.appendChild(hint);
+          } else {
+            card.appendChild(body);
+          }
+
+          mount.appendChild(card);
+        }
+      });
+    },
+
+
+    // ------- Duolingo-style Quiz (one question at a time) -------
+
+    // ------- Duolingo-style Quiz -------
+    _mountQuizSection(sect, mount) {
+      // Preferred microformat: <ol class="quiz"><li class="question" data-answer="A"><div class="prompt">...</div><ul class="choices"><li>...</li>...</ul></li>...</ol>
+      const quizOl = sect.nodes.find(n => n.tagName === 'OL' && n.classList.contains('quiz'));
+      if (quizOl) {
+        const blocks = [];
+        Array.from(quizOl.querySelectorAll('li.question')).forEach(li => {
+          const promptEl = li.querySelector('.prompt');
+          const choicesEl = li.querySelector('.choices');
+          const answerLetter = (li.dataset.answer || '').trim().toUpperCase();
+          const answerIndex = ['A','B','C','D','E'].indexOf(answerLetter);
+          const choices = [];
+          if (choicesEl) {
+            Array.from(choicesEl.querySelectorAll('li')).forEach(item => {
+              const text = item.textContent.replace(/^[A-E]\)\s*/,'').trim();
+              choices.push(text);
+            });
+          }
+          blocks.push({
+            question: promptEl ? promptEl.textContent.trim() : 'Question',
+            choices: choices.length ? choices : ['Option 1','Option 2','Option 3','Option 4'],
+            answerIndex: (answerIndex >= 0 ? answerIndex : null),
+            selected: null,
+            locked: false
+          });
+        });
+        this.interactive.quiz.blocks = blocks;
+        return this._renderQuizBlocks(blocks, mount);
+      }
+
+      // Fallback: plain <ol> with inline choices and an optional "Answers" paragraph
+      const ol = sect.nodes.find(n => n.tagName === 'OL');
+      const answerP = sect.nodes.find(n => n.tagName === 'P' && /answer/i.test(n.textContent));
+      const answerText = answerP ? answerP.textContent : '';
+      if (!ol) {
+        mount.innerHTML = '<div class="rounded-2xl border border-red-200 bg-white p-6 text-red-700">Quiz block missing questions.</div>';
+        return;
+      }
+
+      const blocks = [];
+      Array.from(ol.children).forEach(li => {
+        const html = li.innerHTML.replace(/<br\s*\/?>/ig, '\n');
+        const raw = this._stripTags(html);
+        const firstChoiceIdx = raw.search(/\bA\)\s*/);
+        const qText = firstChoiceIdx > 0 ? raw.slice(0, firstChoiceIdx).trim() : raw.trim();
+        const choiceMatches = [...raw.matchAll(/\b([A-E])\)\s*([^\n]+)(?:\n|$)/g)];
+        let finalChoices = choiceMatches.map(m => m[2].trim());
+        if (!finalChoices.length) {
+          const tail = firstChoiceIdx > -1 ? raw.slice(firstChoiceIdx) : '';
+          finalChoices = tail.split(/\n+/).map(s => s.replace(/^[A-E]\)\s*/,'').trim()).filter(Boolean);
+        }
+        if (!finalChoices.length) finalChoices = ["Option 1","Option 2","Option 3","Option 4"];
+        blocks.push({ question: qText, choices: finalChoices, answerIndex: null, selected: null, locked: false });
+      });
+
+      const pairs = [...answerText.matchAll(/(\d+)\s*[\)\.:-]?\s*([A-E])/gi)];
+      if (pairs.length) {
+        pairs.forEach(m => { const i = parseInt(m[1],10) - 1; const L = m[2].toUpperCase(); if (blocks[i]) blocks[i].answerIndex = L.charCodeAt(0)-65; });
+      } else if (/answer/i.test(answerText)) {
+        (answerText.match(/[A-E]/gi) || []).map(s=>s.toUpperCase()).forEach((L,i)=>{ if(blocks[i]) blocks[i].answerIndex = L.charCodeAt(0)-65; });
+      }
+
+      this.interactive.quiz.blocks = blocks;
+      this._renderQuizBlocks(blocks, mount);
+    },
+    _renderQuizBlocks(blocks, mount) {
+      this.interactive.quiz.score = 0;
+      this.interactive.quiz.current = 0;
+
+      const wrap = document.createElement('section');
+      wrap.className = "rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm p-6 text-gray-900 shadow-md";
+
+      const head = document.createElement('div');
+      head.className = "flex items-center justify-between mb-5";
+      head.innerHTML = `
+        <div class="flex items-center gap-3">
+          <h2 class="text-xl font-semibold">Quiz</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="quizLabel" class="text-xs text-[var(--color-muted)]">Q 1/${blocks.length}</span>
+          <div class="w-40 bg-gray-200 rounded-full h-2 overflow-hidden" aria-hidden="true">
+            <div id="quizBar"
+                 class="h-2 rounded-full school-accent quiz-progress"
+                 style="transform: scaleX(0)"></div>
+          </div>
+        </div>`;
+
+
+      wrap.appendChild(head);
+
+      const stage = document.createElement('div');
+      stage.id = 'quizStage';
+      wrap.appendChild(stage);
+
+      const results = document.createElement('div');
+      results.id = 'quizResults';
+      results.className = "hidden mt-6 rounded-xl border border-gray-200 p-6 bg-white";
+      wrap.appendChild(results);
+
+      mount.appendChild(wrap);
+
+      this._quizRenderCurrent();
+      this._syncQuizHeader();
+    },
+
+    _syncQuizHeader() {
+      const blocks = this.interactive.quiz.blocks || [];
+      const total = blocks.length || 1;
+
+      const idx = this.interactive.quiz.current || 0;            // 0-based
+      const currentLocked = (blocks[idx] && blocks[idx].locked) ? 1 : 0;
+      const step = Math.min(idx + currentLocked, total);          // advance when answered
+      const pct = step / total;
+
+      const bar = document.getElementById('quizBar');
+      const label = document.getElementById('quizLabel');
+
+      if (bar) bar.style.transform = `scaleX(${pct})`;
+      if (label) label.textContent = `Q ${Math.min(idx + 1, total)}/${total}`;
+    },
+
+
+
+    _quizRenderCurrent() {
+      const stage = document.getElementById('quizStage');
+      if (!stage) return;
+      const blocks = this.interactive.quiz.blocks;
+      const i = this.interactive.quiz.current;
+      const total = blocks.length;
+
+      if (i >= total) { this._showQuizResults(); return; }
+
+      const q = blocks[i];
+      stage.innerHTML = '';
+
+      const card = document.createElement('div');
+      card.className = "rounded-xl border border-gray-200 p-4 hover:shadow-sm transition";
+      const qDiv = document.createElement('div');
+      qDiv.className = "font-medium mb-4";
+      qDiv.textContent = q.question;
+      card.appendChild(qDiv);
+
+      const choicesWrap = document.createElement('div');
+      choicesWrap.className = "grid gap-3 sm:grid-cols-2";
+      card.appendChild(choicesWrap);
+
+      q.choices.forEach((choice, ci) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = "choice flex items-center gap-3 w-full text-left px-3 py-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition";
+        btn.setAttribute('data-ci', ci);
+
+        const badge = document.createElement('span');
+        badge.className = "inline-flex items-center justify-center w-7 h-7 text-xs font-semibold rounded-md border border-gray-300";
+        badge.textContent = String.fromCharCode(65+ci);
+        btn.appendChild(badge);
+
+        const text = document.createElement('span');
+        text.innerHTML = this._escape(choice);
+        btn.appendChild(text);
+
+        btn.addEventListener('click', () => this._selectChoice(i, ci, card));
+        choicesWrap.appendChild(btn);
+      });
+
+      const actions = document.createElement('div');
+      actions.className = "mt-4 flex items-center justify-between";
+      const fb = document.createElement('div');
+      fb.className = "text-sm";
+      fb.setAttribute('data-fb', i);
+
+      const nav = document.createElement('div');
+      nav.className = "flex items-center gap-2";
+
+      const prevBtn = document.createElement('button');
+      prevBtn.className = "btn-ghost text-sm px-3 py-1.5";
+      prevBtn.textContent = "Back";
+      prevBtn.disabled = (i === 0);
+      prevBtn.addEventListener('click', () => this._quizPrev());
+
+      const nextBtn = document.createElement('button');
+      nextBtn.className = "btn-primary text-sm px-3 py-1.5";
+      nextBtn.textContent = (i === total - 1) ? "Finish" : "Next";
+      nextBtn.disabled = !q.locked && (q.answerIndex != null); // wait for selection if we know the answer
+      nextBtn.addEventListener('click', () => this._quizNext());
+
+      nav.appendChild(prevBtn); nav.appendChild(nextBtn);
+      actions.appendChild(fb); actions.appendChild(nav);
+      card.appendChild(actions);
+
+      stage.appendChild(card);
+      this._syncQuizHeader();
+
+    },
+
+    _selectChoice(qi, ci, cardEl) {
+      const q = this.interactive.quiz.blocks[qi];
+      if (q.locked) return;
+
+      q.selected = ci;
+      cardEl.querySelectorAll('.choice').forEach(el => {
+        el.classList.remove('choice-selected','choice-correct','choice-incorrect','bg-green-50','bg-red-50');
+      });
+
+      const selectedBtn = cardEl.querySelector(`.choice[data-ci="${ci}"]`);
+      if (selectedBtn) selectedBtn.classList.add('choice-selected');
+
+      const fb = cardEl.querySelector(`[data-fb="${qi}"]`);
+      const nextBtn = cardEl.querySelector('.btn-primary');
+
+      if (q.answerIndex == null) {
+        if (fb) { fb.textContent = `Answer key not detected. You selected ${String.fromCharCode(65+ci)}.`; fb.className = "text-sm text-gray-700"; }
+        if (nextBtn) nextBtn.disabled = false;
+        q.locked = true;
+        this._syncQuizHeader();    // <-- add this
+        return;
+      }
+
+
+      q.locked = true;
+      const correct = (ci === q.answerIndex);
+
+      if (correct) {
+        selectedBtn.classList.add('choice-correct','bg-green-50');
+        if (fb) { fb.textContent = 'Correct! ✅'; fb.className = "text-sm text-green-600 font-medium"; }
+        this.interactive.quiz.score = (this.interactive.quiz.score || 0) + 1;
+        this._confettiBurst();
+      } else {
+        selectedBtn.classList.add('choice-incorrect','bg-red-50');
+        const correctBtn = cardEl.querySelector(`.choice[data-ci="${q.answerIndex}"]`);
+        if (correctBtn) correctBtn.classList.add('choice-correct','bg-green-50');
+        if (fb) { fb.textContent = `Incorrect. Correct: ${String.fromCharCode(65+q.answerIndex)}.`; fb.className = "text-sm text-red-600 font-medium"; }
+      }
+
+      if (nextBtn) nextBtn.disabled = false;
+      this._syncQuizHeader();
+
+    },
+
+    _quizNext() {
+      const i = this.interactive.quiz.current;
+      const total = this.interactive.quiz.blocks.length;
+      if (i + 1 < total) {
+        this.interactive.quiz.current = i + 1;
+        this._quizRenderCurrent();
+        this._syncQuizHeader();
+      } else {
+        this._showQuizResults();
+        this._syncQuizHeader();
+      }
+    },
+
+
+    _quizPrev() {
+      const i = this.interactive.quiz.current;
+      if (i > 0) {
+        this.interactive.quiz.current = i - 1;
+        this._quizRenderCurrent();
+        this._syncQuizHeader();
+      }
+    },
+
+
+    _showQuizResults() {
+      const total = this.interactive.quiz.blocks.length || 1;
+      const score = this.interactive.quiz.score || 0;
+      const results = document.getElementById('quizResults');
+      if (!results) return;
+      results.classList.remove('hidden');
+      results.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-sm text-[var(--color-muted)] mb-1">Quiz complete</div>
+            <div class="text-xl font-semibold">Score: ${score} / ${total}</div>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn-ghost text-sm" id="quizRetry">Practice Again</button>
+            <button class="btn-primary text-sm" id="quizShuffle">Shuffle Questions</button>
+          </div>
+        </div>`;
+      document.getElementById('quizRetry')?.addEventListener('click', () => this._quizRetry(false));
+      document.getElementById('quizShuffle')?.addEventListener('click', () => this._quizRetry(true));
+      // Jump results into view
+      results.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    },
+
+    _quizRetry(shuffle) {
+      const blocks = this.interactive.quiz.blocks.map(b => ({ ...b, selected: null, locked: false }));
+      if (shuffle) {
+        for (let i = blocks.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
+        }
+      }
+      this.interactive.quiz.blocks = blocks;
+      this.interactive.quiz.current = 0;
+      const mount = document.getElementById('sectionMount');
+      mount.innerHTML = '';
+      this._renderQuizBlocks(blocks, mount);
+      this._syncQuizHeader();
+      mount.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    },
+
+
+    _confettiBurst() {
+      // lightweight, CSS-only placeholder; you can swap for a real confetti lib later
+      let c = document.getElementById('confetti');
+      if (!c) {
+        c = document.createElement('div'); c.id = 'confetti'; document.body.appendChild(c);
+      }
+      c.innerHTML = '';
+      for (let i = 0; i < 12; i++) {
+        const dot = document.createElement('span');
+        dot.style.cssText = `
+          position:absolute; width:8px; height:8px; border-radius:9999px; background:hsla(${Math.random()*360},80%,60%,.9);
+          top: 50%; left: 50%; transform: translate(-50%,-50%);
+          animation: pop ${600 + Math.random()*400}ms ease-out forwards;
+        `;
+        c.appendChild(dot);
+      }
+      const style = document.createElement('style');
+      style.innerHTML = `
+        @keyframes pop {
+          from { opacity:1; transform: translate(-50%,-50%) scale(1); }
+          to { opacity:0; transform: translate(${(Math.random()-0.5)*300}px, ${(Math.random()-0.5)*240}px) scale(0.8); }
+        }
+      `;
+      c.appendChild(style);
+      setTimeout(() => { c.innerHTML = ''; }, 900);
+    },
+
+
+    // ---------- FLASHCARDS ----------
+    _mountFlashcardsSection(sect, mount) {
+      const ul = sect.nodes.find(n => n.tagName === 'UL');
+      const cards = [];
+      if (ul) {
+        Array.from(ul.querySelectorAll('li')).forEach(li => {
+          const raw = this._stripTags(li.innerHTML);
+          let parts = raw.split(/\s+[—-]\s+/);
+          if (parts.length < 2) parts = raw.split(/\s*[:|]\s*/);
+          if (parts.length >= 2) cards.push({ front: parts[0].trim(), back: parts[1].trim() });
+        });
+      }
+      this.interactive.flashcards.cards = cards;
+      this.interactive.flashcards.index = 0;
+      this.interactive.flashcards.face = 'front';
+
+      const count = cards.length;
+      if (!count) { mount.innerHTML = '<div class="rounded-2xl border border-yellow-200 bg-white p-6 text-yellow-700">No flashcards detected.</div>'; return; }
+
+      const wrap = document.createElement('section'); wrap.className = "rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm p-6 text-gray-900 shadow-md";
+
+      const head = document.createElement('div'); head.className = "flex items-center justify-between mb-5";
+      head.innerHTML = `<h2 class="text-xl font-semibold">Flashcards</h2><div class="text-sm text-[var(--color-muted)]"><span id="fcIdx">1</span>/<span id="fcTot">${count}</span></div>`;
+      wrap.appendChild(head);
+
+      const barWrap = document.createElement('div'); barWrap.className = "w-full bg-gray-200 rounded-full h-1.5 mb-6 overflow-hidden";
+      const bar = document.createElement('div'); bar.id = 'fcBar'; bar.className = "h-1.5 rounded-full school-accent"; bar.style.width = '0%';
+      barWrap.appendChild(bar); wrap.appendChild(barWrap);
+
+      const scene = document.createElement('div'); scene.className = "fc-scene";
+      const box = document.createElement('div'); box.className = "fc-card rounded-2xl border border-gray-200 shadow-md hover:shadow-lg transition"; box.style.height = '12rem';
+      const front = document.createElement('div'); front.className = "fc-face bg-white fc-front"; front.innerHTML = `<div class="text-lg sm:text-xl font-medium px-3" id="fcFront"></div>`;
+      const back = document.createElement('div'); back.className = "fc-face bg-white fc-back"; back.innerHTML = `<div class="text-lg sm:text-xl font-medium px-3" id="fcBack"></div>`;
+      box.appendChild(front); box.appendChild(back); scene.appendChild(box); wrap.appendChild(scene);
+
+      const hint = document.createElement('div'); hint.className = "text-center text-xs text-[var(--color-muted)] mt-2"; hint.textContent = "Click card or press Space to flip"; wrap.appendChild(hint);
+
+      const controls = document.createElement('div'); controls.className = "mt-6 flex items-center justify-between";
+      controls.innerHTML = `
+        <div class="flex items-center gap-2">
+          <button id="fcPrev" class="btn-ghost">← Prev</button>
+          <button id="fcShuffle" class="btn-ghost">Shuffle</button>
+        </div>
+        <div class="flex items-center gap-2">
+          <a class="btn-ghost text-sm"
+             href="${this._ankiHref ? this._ankiHref() : '#'}"></a>
+          <button id="fcNext" class="btn-primary">Next →</button>
+        </div>`;
+      wrap.appendChild(controls);
+
+
+      mount.appendChild(wrap);
+
+      box.addEventListener('click', () => this.fcFlip());
+      document.getElementById('fcPrev').addEventListener('click', () => this.fcPrev());
+      document.getElementById('fcNext').addEventListener('click', () => this.fcNext());
+      document.getElementById('fcShuffle').addEventListener('click', () => this.fcShuffle());
+
+      this._paintFlashcard();
+    },
+
+    _paintFlashcard() {
+      const fc = this.interactive.flashcards;
+      const idx = fc.index, tot = fc.cards.length;
+      const front = document.getElementById('fcFront'), back = document.getElementById('fcBack'), bar = document.getElementById('fcBar'), idxEl = document.getElementById('fcIdx');
+      if (!tot) return;
+      if (front) front.textContent = fc.cards[idx].front;
+      if (back) back.textContent = fc.cards[idx].back;
+      if (idxEl) idxEl.textContent = String(idx + 1);
+      if (bar) bar.style.width = Math.round(((idx + 1) / tot) * 100) + '%';
+      const box = document.querySelector('.fc-card'); if (box) box.classList.toggle('flipped', fc.face === 'back');
+    },
+    fcFlip()   { const fc = this.interactive.flashcards; fc.face = (fc.face === 'front') ? 'back' : 'front'; this._paintFlashcard(); },
+    fcNext()   { const fc = this.interactive.flashcards; fc.index = (fc.index + 1) % fc.cards.length; fc.face = 'front'; this._paintFlashcard(); },
+    fcPrev()   { const fc = this.interactive.flashcards; fc.index = (fc.index - 1 + fc.cards.length) % fc.cards.length; fc.face = 'front'; this._paintFlashcard(); },
+    fcShuffle(){ const fc = this.interactive.flashcards; for (let i = fc.cards.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [fc.cards[i], fc.cards[j]] = [fc.cards[j], fc.cards[i]]; } fc.index = 0; fc.face = 'front'; this._paintFlashcard(); },
+
+    // ---------- utils ----------
+    _stripTags(html) { return (html||'').replace(/<[^>]*>/g, '').replace(/\r/g,'').trim(); },
+    _escape(s) { return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); },
+  }
+}
+</script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // UTC → local for [data-utc]
+    const utcEls = document.querySelectorAll('[data-utc]');
+    utcEls.forEach(el => {
+      const iso = el.getAttribute('data-utc');
+      if (!iso) return;
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) { el.textContent = 'Invalid date'; return; }
+      el.textContent = d.toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric'
+      });
+    });
+
+    // Keyboard shortcuts to set status quickly: C=complete, R=needs_review, I=incomplete, X=clear
+    const seg = document.querySelector('form.segmented');
+    if (!seg) return;
+    const clickBtn = (val) => seg.querySelector(`button[name="status"][value="${val}"]`)?.click();
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT','TEXTAREA'].includes((e.target?.tagName||'').toUpperCase())) return;
+      if (e.key === 'c' || e.key === 'C') { e.preventDefault(); clickBtn('complete'); }
+      if (e.key === 'r' || e.key === 'R') { e.preventDefault(); clickBtn('needs_review'); }
+      if (e.key === 'i' || e.key === 'I') { e.preventDefault(); clickBtn('incomplete'); }
+      if (e.key === 'x' || e.key === 'X') { e.preventDefault(); clickBtn('unmarked'); }
+    });
+  });
+</script>
+
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // UTC → local
+    document.querySelectorAll('[data-utc]').forEach(el => {
+      const iso = el.getAttribute('data-utc'); if (!iso) return;
+      const d = new Date(iso); el.textContent = isNaN(d) ? 'Invalid date' :
+        d.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric' });
+    });
+
+    // Delayed keyboard tooltip on segmented buttons
+    const tip = document.createElement('div');
+    tip.className = 'kbd-tip';
+    document.body.appendChild(tip);
+
+    let hoverTimer = null;
+    function showTip(btn, text) {
+      const rect = btn.getBoundingClientRect();
+      tip.innerHTML = text + ' <span class="kbd-badge">' + (btn.dataset.kbd || '?') + '</span>';
+      tip.style.left = (rect.left + rect.width / 2) + 'px';
+      tip.style.top = (rect.top + window.scrollY) + 'px';
+      tip.classList.add('show');
+    }
+    function hideTip() { tip.classList.remove('show'); }
+
+    document.querySelectorAll('form.segmented .seg-btn').forEach(btn => {
+      btn.addEventListener('mouseenter', () => {
+        btn.classList.add('pop-once');
+        const label = (btn.getAttribute('aria-label') || '').replace(/\s*\([A-Z]\)\s*$/,'');
+        hoverTimer = setTimeout(() => showTip(btn, label || 'Shortcut'), 750);
+      });
+      btn.addEventListener('mouseleave', () => { clearTimeout(hoverTimer); hideTip(); });
+      btn.addEventListener('blur', () => { clearTimeout(hoverTimer); hideTip(); });
+    });
+
+    // Keyboard shortcuts (C/R/I/X) still work (from previous patch)
+    const seg = document.querySelector('form.segmented');
+    if (seg) {
+      const clickBtn = (val) => seg.querySelector('button[name="status"][value="'+val+'"]')?.click();
+      window.addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName || '').toUpperCase();
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (e.key === 'c' || e.key === 'C') { e.preventDefault(); clickBtn('complete'); }
+        if (e.key === 'r' || e.key === 'R') { e.preventDefault(); clickBtn('needs_review'); }
+        if (e.key === 'i' || e.key === 'I') { e.preventDefault(); clickBtn('incomplete'); }
+        if (e.key === 'x' || e.key === 'X') { e.preventDefault(); clickBtn('unmarked'); }
+      });
+    }
+  });
+</script>
+
+
+{% endblock %}

@@ -16,7 +16,7 @@ Use curiosity, challenge, or action phrasing (e.g., "Mastering...", "Can you sol
 Return only the subject line text with no quotes, punctuation at the end, or extra words.
 """
     response = client.chat.completions.create(
-        model="gpt-4",  # OK; you can switch to "gpt-4o-mini" for cheaper subject lines
+        model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.6
     )
@@ -60,7 +60,7 @@ Avoid repeating any ideas, questions, or examples already written for this cours
         ),
         "quiz": (
             "- Write 5 challenging multiple-choice questions that test **application and reasoning** (not recall). "
-            "Ensure they hit dimensions not already covered in the summary or example. Include an Answer Key with 1–2 line rationales."
+            "Each question must declare the correct option in a data attribute as defined below. Do NOT add a separate 'Answers' paragraph."
         ),
         "flashcards": (
             "- Write 6–8 flashcards targeting **different dimensions** of the subtopic: one on mechanism, one on regulators, "
@@ -77,32 +77,13 @@ Avoid repeating any ideas, questions, or examples already written for this cours
         for ct in content_types if ct.lower() in section_descriptions
     ])
 
-    # --- First email guarantee (renamed Quick Win) ---
-    is_first_email = (int(position_in_plan) == 1)
-    if is_first_email:
-        practice_block_title = (
-            "Practice Set" if "quiz" in [ct.lower() for ct in content_types]
-            else "Flash Drill" if "flashcards" in [ct.lower() for ct in content_types]
-            else "Case Check"
-        )
-        practice_spec = f"""
-- Create a top-of-email <h2>{practice_block_title}</h2> section. 
-- If quiz selected: include 3 ultra-targeted MCQs with compact worked solutions.
-- If flashcards selected: include 5 high-yield flashcards across different dimensions.
-- Else: 2 applied problems (short-answer style) that probe reasoning, not recall.
-- Keep it concise, advanced, and directly usable today.
-"""
-        practice_block_html = f"<h2>{practice_block_title}</h2>\n<p>Targeted practice content appears here.</p>"
-    else:
-        practice_spec = ""
-        practice_block_html = ""
+
 
     # --- Teaser for next narrow slice ---
     next_teaser = (
         "Next email zooms in on another advanced facet — regulators, edge-cases, or exam traps you must master."
     )
 
-    # --- Prompt enforcing non-redundancy + depth ---
     # --- STRUCTURE HTML skeleton based on selected sections ---
     selected = [ct.lower() for ct in content_types]
 
@@ -130,27 +111,67 @@ Avoid repeating any ideas, questions, or examples already written for this cours
     if "quiz" in selected:
         sections_html.append(
             "<h2>Quiz</h2>\n"
-            "<ol>\n"
-            "  <li>Q1 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
-            "  <li>Q2 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
-            "  <li>Q3 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
-            "  <li>Q4 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
-            "  <li>Q5 ...<br>A) ... B) ... C) ... D) ... E) ...</li>\n"
-            "</ol>\n"
-            "<p><strong>Answers:</strong> A1..., A2..., A3..., A4..., A5...</p>"
+            "<ol class='quiz'>\n"
+            "  <li class='question' data-answer='A'>\n"
+            "    <div class='prompt'>Q1 …</div>\n"
+            "    <ul class='choices'>\n"
+            "      <li>A) …</li>\n"
+            "      <li>B) …</li>\n"
+            "      <li>C) …</li>\n"
+            "      <li>D) …</li>\n"
+            "    </ul>\n"
+            "  </li>\n"
+            "  <li class='question' data-answer='B'>\n"
+            "    <div class='prompt'>Q2 …</div>\n"
+            "    <ul class='choices'>\n"
+            "      <li>A) …</li>\n"
+            "      <li>B) …</li>\n"
+            "      <li>C) …</li>\n"
+            "      <li>D) …</li>\n"
+            "    </ul>\n"
+            "  </li>\n"
+            "  <li class='question' data-answer='C'>\n"
+            "    <div class='prompt'>Q3 …</div>\n"
+            "    <ul class='choices'>\n"
+            "      <li>A) …</li>\n"
+            "      <li>B) …</li>\n"
+            "      <li>C) …</li>\n"
+            "      <li>D) …</li>\n"
+            "    </ul>\n"
+            "  </li>\n"
+            "  <li class='question' data-answer='D'>\n"
+            "    <div class='prompt'>Q4 …</div>\n"
+            "    <ul class='choices'>\n"
+            "      <li>A) …</li>\n"
+            "      <li>B) …</li>\n"
+            "      <li>C) …</li>\n"
+            "      <li>D) …</li>\n"
+            "    </ul>\n"
+            "  </li>\n"
+            "  <li class='question' data-answer='A'>\n"
+            "    <div class='prompt'>Q5 …</div>\n"
+            "    <ul class='choices'>\n"
+            "      <li>A) …</li>\n"
+            "      <li>B) …</li>\n"
+            "      <li>C) …</li>\n"
+            "      <li>D) …</li>\n"
+            "    </ul>\n"
+            "  </li>\n"
+            "</ol>"
         )
 
     if "flashcards" in selected:
         sections_html.append(
             "<h2>Flashcards</h2>\n"
             "<ul>\n"
-            "  <li>Front — Back</li>\n"
-            "  <li>Front — Back</li>\n"
-            "  <li>Front — Back</li>\n"
-            "  <li>Front — Back</li>\n"
-            "  <li>Front — Back</li>\n"
-            "  <li>Front — Back</li>\n"
-            "</ul>"
+            "  <li>Term 1 — Definition 1</li>\n"
+            "  <li>Term 2 — Definition 2</li>\n"
+            "  <li>Term 3 — Definition 3</li>\n"
+            "  <li>Term 4 — Definition 4</li>\n"
+            "  <li>Term 5 — Definition 5</li>\n"
+            "  <li>Term 6 — Definition 6</li>\n"
+            "</ul>\n"
+            "<!-- STRICT FORMAT: exactly one em dash (—) per <li>, no nested tags -->"
         )
 
     if "suggested reading" in selected:
@@ -184,7 +205,6 @@ Avoid repeating any ideas, questions, or examples already written for this cours
             "</ul>"
         )
 
-
     prompt = f"""
 You are an expert study strategist creating a study email for a course titled "{plan_title}".
 This is email {position_in_plan}. Today's declared focus is: "{section_title}"
@@ -196,18 +216,37 @@ Rule 1 — Narrow focus: Choose ONE specific high-yield subtopic (e.g., folding 
 Rule 2 — Non-redundancy: Each section must cover a **different dimension** of the subtopic (mechanism vs application vs pitfalls vs practice).
 Rule 3 — Upper-division contract: Avoid elementary filler. Anchor content in enzymes, pathways, regulators, kinetics, energetics, experimental methods, or pathological relevance.
 
-{"Begin with an immediate high-utility practice block for the subtopic." if is_first_email else ""}
-{practice_spec}
+
+
 
 Then, based on the student's selected content preferences, include ONLY the following sections:
 {requested_blocks if requested_blocks.strip() else "- If no sections selected, include Summary + Flashcards."}
+
+QUIZ FORMAT (MANDATORY — DO NOT DEVIATE):
+Under <h2>Quiz</h2> output EXACTLY this structure for 5 questions:
+<ol class="quiz">
+  <li class="question" data-answer="A|B|C|D">
+    <div class="prompt">Question text…</div>
+    <ul class="choices">
+      <li>A) Choice A</li>
+      <li>B) Choice B</li>
+      <li>C) Choice C</li>
+      <li>D) Choice D</li>
+    </ul>
+  </li>
+  <!-- repeat to total 5 li.question items -->
+</ol>
+Rules:
+- NO <br> between choices.
+- Exactly one correct letter in data-answer per question.
+- Do NOT add an "Answers:" paragraph anywhere.
 
 Conclude with 2–3 sentences that recap the unique subtopic insights and tease what's next:
 - Next Up: {next_teaser}
 
 STRUCTURE (use HTML tags exactly):
 <h1>{section_title}</h1>
-{practice_block_html}
+
 <p>Short motivational intro (2–3 sentences) that names the chosen subtopic.</p>
 
 {structure_html}
@@ -215,13 +254,10 @@ STRUCTURE (use HTML tags exactly):
 <h2>Conclusion</h2>
 <p>Recap + Next Up teaser.</p>
 
-
-
 Global requirements:
 - Each section must present **new information** (no overlaps, no paraphrasing).
-- Write at advanced college level (biochemistry/upper-division). 
+- Write at advanced college level (biochemistry/upper-division).
 - Return valid HTML using <h1>, <h2>, <p>, <ul>, <ol>, <li>, and inline <strong>. No tables or inline styles.
-
 """
 
     response = client.chat.completions.create(

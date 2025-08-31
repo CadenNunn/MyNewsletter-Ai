@@ -3,33 +3,135 @@
 
 {% block content %}
 <div class="theme-school">
-  <div class="min-h-screen flex flex-col items-center justify-center px-4 text-center bg-[var(--color-bg)]">
-    <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-[var(--color-accent)] mb-6"></div>
+  <div class="relative min-h-screen flex flex-col items-center justify-center px-4 text-center bg-[var(--color-bg)] overflow-hidden transition-opacity duration-300">
 
-    <h1 class="text-3xl font-bold text-[var(--color-accent-dark)] mb-4">Creating Your Study Plan...</h1>
-    <p class="text-[var(--color-text)] text-lg mb-2">Topic: <strong>{{ topic }}</strong></p>
-    <p class="text-[var(--color-text)] text-lg mb-2">Audience: <strong>{{ demographic }}</strong></p>
+    <!-- background accents -->
+    <div class="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl opacity-20"
+         style="background: radial-gradient(closest-side, var(--color-accent), transparent);"></div>
+    <div class="pointer-events-none absolute -bottom-32 -right-24 h-80 w-80 rounded-full blur-3xl opacity-20"
+         style="background: radial-gradient(closest-side, var(--color-accent-dark), transparent);"></div>
 
-    <p class="text-[var(--color-muted)] mt-4 text-sm italic" id="loading-message">Analyzing your topic...</p>
+    <!-- spinner -->
+    <div class="animate-spin rounded-full h-16 w-16 border-4 border-[var(--color-accent-bg)] border-t-[var(--color-accent)] mb-6"></div>
+
+    <!-- heading -->
+    <h1 class="text-3xl font-bold text-[var(--color-accent-dark)] mb-2">Creating Your Study Plan...</h1>
+
+    <!-- details -->
+    <p class="text-[var(--color-text)] text-base sm:text-lg mb-4">
+      Topic:
+      <strong class="font-semibold">{{ topic }}</strong>
+    </p>
+
+    <!-- rotating status / tip -->
+    <p id="loading-message" class="text-[var(--color-muted)] mt-2 text-sm italic">Analyzing your topic...</p>
+
+    <!-- progress bar -->
+    <div class="w-full max-w-xl mt-6">
+      <div class="h-2 w-full bg-[var(--color-accent-bg)]/40 rounded-full overflow-hidden">
+        <div id="progress-bar" class="h-2 w-0 bg-[var(--color-accent)] rounded-full transition-all duration-200 ease-linear"></div>
+      </div>
+      <div class="flex justify-between text-xs text-[var(--color-muted)] mt-2">
+        <span id="progress-label">0%</span>
+        <span>Optimizing for retention</span>
+      </div>
+    </div>
+
+    <!-- reassurance -->
+    <div class="mt-8 text-[var(--color-muted)] text-xs sm:text-sm">
+      Tip: You’ll get summaries, examples, quizzes, and flashcards formatted for fast review.
+    </div>
   </div>
 
   <script>
-    const messages = [
+    // ---- UI elements
+    const container = document.querySelector(".min-h-screen");
+    const msgEl = document.getElementById("loading-message");
+    const barEl = document.getElementById("progress-bar");
+    const pctEl = document.getElementById("progress-label");
+
+    // ---- Messages
+    const statuses = [
       "Analyzing your topic...",
       "Planning your summary...",
       "Drafting quiz & examples...",
       "Formatting your content...",
+      "Calibrating difficulty...",
       "Almost done!"
     ];
-    let i = 0;
-    setInterval(() => {
-      document.getElementById("loading-message").textContent = messages[i % messages.length];
-      i++;
-    }, 2000);
+    const tips = [
+      "💡 Spaced review 24h after learning can double retention.",
+      "⏱️ Short, frequent sessions beat cramming.",
+      "🧠 Mix practice types: recall, MCQs, and concept checks.",
+      "📌 Active recall > rereading. Test yourself!",
+      "📈 Review older material just before it’s forgotten."
+    ];
 
-    setTimeout(() => {
-      window.location.href = "/generate-school-newsletter";
-    }, 2500);
+    let statusIdx = 0, tipIdx = 0;
+    const messageInterval = setInterval(() => {
+      if (statusIdx % 2 === 0) {
+        msgEl.textContent = statuses[statusIdx % statuses.length];
+      } else {
+        msgEl.textContent = tips[tipIdx % tips.length];
+        tipIdx++;
+      }
+      statusIdx++;
+    }, 1800);
+
+    // ---- Progress logic
+    let progress = 0;
+    let finished = false;
+
+    const progressInterval = setInterval(() => {
+      if (finished) return;
+      // Cap at 95% until the backend page is actually ready
+      const ceiling = 95;
+      const remaining = ceiling - progress;
+      const step = Math.max(0.8, remaining * 0.07);
+      progress = Math.min(ceiling, progress + step);
+      barEl.style.width = progress.toFixed(0) + "%";
+      pctEl.textContent = progress.toFixed(0) + "%";
+    }, 120);
+
+    // ---- Preload the real page and only swap when it's fully ready
+    (async function waitForPreview() {
+      while (true) {
+        try {
+          const res = await fetch("/generate-school-newsletter", {
+            method: "GET",
+            headers: {
+              "X-Requested-With": "XMLHttpRequest",
+              "X-Loader-Preload": "1"
+            },
+            credentials: "same-origin"
+          });
+
+          if (res.ok) {
+            const html = await res.text();
+
+            // Finish progress to 100%
+            finished = true;
+            clearInterval(progressInterval);
+            clearInterval(messageInterval);
+            barEl.style.width = "100%";
+            pctEl.textContent = "100%";
+
+            // Smooth fade-out, then replace the whole document with the loaded HTML
+            container.style.opacity = "0";
+            setTimeout(() => {
+              document.open();
+              document.write(html);
+              document.close();
+            }, 300);
+            break;
+          }
+        } catch (e) {
+          // ignore and retry
+        }
+        // Retry after a short delay if not ready or network error
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    })();
   </script>
 </div>
 {% endblock %}

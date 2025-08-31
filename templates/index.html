@@ -38,7 +38,7 @@
         { title: "🧠 Choose Your Topic", desc: "Pick what you're curious about—AI, sports, healthcare, anything." },
         { title: "🎯 Select Your Audience", desc: "Write just for yourself, a friend, or a study group." },
         { title: "🎵 Pick Your Tone", desc: "Formal, motivational, chill—match your vibe." },
-        { title: "📬 Set Delivery & Email", desc: "Choose frequency—weekly, biweekly, monthly—and email." }
+        { title: "📬 Set Delivery & Email", desc: "Choose frequency—daily, bidaily, weekly—and email." }
       ],
       dotY: 0,
       init() {
@@ -219,38 +219,363 @@
 </section>
 
 
-<!-- Product Visuals: Strong Stagger -->
+
+
+
+
+
+<!-- Product Stories: Steps Left, Phone Right (no-crop images) -->
 <section class="bg-white py-20">
-  <div class="max-w-7xl mx-auto px-6">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+  <style>
+    .phone-logo {
+      position: absolute;
+      bottom: -24px;            /* sits outside phone bezel */
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      border-radius: 9999px;
+      padding: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .phone-logo img {
+      height: 40px;             /* size of your logo */
+      width: 40px;
+      object-fit: contain;
+      display: block;
+    }
 
-      <!-- 1) Upload Methods -->
-      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mt-16">
-        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Upload: Manual • Documents • Syllabus</span>
-        <img src="https://i.ibb.co/vvwQdMjZ/Screenshot-2025-08-21-at-12-01-27-PM.png" alt="Upload options" class="w-full h-auto object-contain rounded-xl">
-      </figure>
+    .wrap{max-width:1120px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1fr;gap:28px}
+    @media (min-width:980px){.wrap{grid-template-columns:460px 1fr;align-items:start}}
+    .title{font-weight:800;letter-spacing:-.02em;color:#0f172a}
+    .sub{color:#475569}
 
-      <!-- 2) Email Content Selection -->
-      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mb-16">
-        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Choose Email Content</span>
-        <img src="https://i.ibb.co/N2gpVWpr/Screenshot-2025-08-21-at-12-02-29-PM.png" alt="Email content selection" class="w-full h-auto object-contain rounded-xl">
-      </figure>
+    /* steps */
+    .steps{display:grid;gap:14px}
+    .step{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:12px 14px;border:1px solid #e5e7eb;border-radius:14px;background:#f8fafc}
+    .badge{height:28px;width:28px;border-radius:999px;background:#6366F1;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
+    .step h4{margin:0 0 4px 0;color:#0f172a}
+    .step p{margin:0;color:#64748b;font-size:14px}
 
-      <!-- 3) Dashboard -->
-      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mt-24">
-        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Dashboard</span>
-        <img src="https://i.ibb.co/chq1zNwh/Screenshot-2025-08-21-at-12-03-30-PM.png" alt="Dashboard" class="w-full h-auto object-contain rounded-xl">
-      </figure>
+    /* phone mockup */
+    .phone-shell{position:relative;margin:0 0 0 auto;width:380px;max-width:90vw;aspect-ratio:9/19;border-radius:38px;background:#0b0b0c;box-shadow:0 20px 60px rgba(2,6,23,.35),0 6px 18px rgba(2,6,23,.18);padding:10px}
+    .bezel{position:relative;width:100%;height:100%;border-radius:32px;background:#111317;overflow:hidden}
+    .island{position:absolute;top:10px;left:50%;transform:translateX(-50%);height:20px;width:110px;background:#050607;border-radius:12px;z-index:5;opacity:.92}
+    .screen{position:absolute;inset:0;padding:28px 10px 10px 10px;display:flex;flex-direction:column}
 
-      <!-- 4) Example Email -->
-      <figure class="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 md:mb-24">
-        <span class="absolute left-4 top-4 z-10 inline-flex items-center rounded-full bg-black/80 text-white text-xs font-semibold px-3 py-1 tracking-wide">Example Email</span>
-        <img src="https://i.ibb.co/1f34D0Lz/Screenshot-2025-08-21-at-12-04-46-PM.png" alt="Example email" class="w-full h-auto object-contain rounded-xl">
-      </figure>
+    /* progress */
+    .progress {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      position: relative;
+      z-index: 6;
+      margin-top: 22px; /* was 0 — move it down below the dots */
+    }
+    .bar{height:3px;background:rgba(255,255,255,.25);border-radius:999px;overflow:hidden}
+    .bar>span{display:block;height:100%;width:0;background:linear-gradient(90deg,#A5B4FC,#6366F1);transition:width .2s linear}
 
+    /* media (no crop) */
+    .media{position:relative;margin-top:10px;flex:1;border-radius:22px;overflow:hidden;background:#0d0f14;display:flex;align-items:center;justify-content:center}
+    .media img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+
+    /* caption: now sits outside the canvas, on the bezel background */
+    .caption {
+      margin-top: 6px;
+      padding: 6px 10px;
+      color: #f1f5f9;
+      font-size: 12px;
+      text-align: center;
+      background: #0b0b0c; /* matches phone shell */
+      border-radius: 8px;
+    }
+
+    .chrome-dots {
+      position: absolute;
+      top: 8px;
+      left: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+    }
+
+
+    .chrome-dots i{height:10px;width:10px;border-radius:999px;display:inline-block}
+    .dot-r{background:#f87171}.dot-y{background:#facc15}.dot-g{background:#34d399}
+
+    .nav-btn{position:absolute;top:0;bottom:0;width:30%;z-index:7;background:transparent;border:none}
+    .nav-prev{left:0}.nav-next{right:0}
+    .nav-btn:focus{outline:none}
+    .ghost{position:absolute;inset:0}
+
+    .phone-shell {
+      position: relative;
+      margin: 0 0 0 auto;
+      width: 320px; /* smaller than before */
+      max-width: 85vw;
+      aspect-ratio: 9/19;
+      border-radius: 34px;
+      background: #0b0b0c;
+      box-shadow: 0 20px 60px rgba(2,6,23,.35), 0 6px 18px rgba(2,6,23,.18);
+      padding: 8px;
+    }
+  </style>
+
+  <style>
+    /* tighten the phone screen padding so images fill more */
+    .screen {
+      position: absolute;
+      inset: 0;
+      padding: 16px 8px 8px 8px; /* was ~28px top — less unused space */
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* media area: center content, no crop */
+    .media {
+      position: relative;
+      margin-top: 8px;
+      flex: 1;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #0d0f14;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* NEW: uniform white canvas so all images appear the same size */
+    .canvas {
+      position: relative;            /* NEW */
+      width: 94%;
+      height: 94%;
+      max-width: 100%;
+      max-height: 100%;
+      background: #ffffff;
+      border-radius: 14px;
+      border: 1px solid #e5e7eb;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .canvas img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain; /* no cropping, consistent fit */
+      display: block;
+    }
+
+    .story-img {
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+      opacity: 0;
+      transition: opacity 350ms ease;
+    }
+    .story-img.active {
+      opacity: 1;
+    }
+
+    /* caption: stronger contrast on bright images */
+    .caption {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      padding: 10px 14px;
+      color: #f8fafc;
+      font-size: 12px;
+      letter-spacing: .2px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.72));
+      backdrop-filter: blur(1px);
+    }
+
+    /* smaller phone shell + better responsiveness */
+    .phone-shell {
+      position: relative;
+      margin: 0 0 0 auto;
+      width: 300px;              /* smaller overall phone */
+      max-width: 85vw;
+      aspect-ratio: 9/19;
+      border-radius: 34px;
+      background: #0b0b0c;
+      box-shadow: 0 20px 60px rgba(2,6,23,.35), 0 6px 18px rgba(2,6,23,.18);
+      padding: 8px;
+    }
+    @media (max-width: 640px) {
+      .phone-shell { width: 270px; }
+    }
+  </style>
+
+
+  <div class="wrap">
+    <!-- Left: Steps -->
+    <div>
+      <h2 class="title text-3xl sm:text-4xl">See Memoraid in Action</h2>
+      <p class="sub mt-2">Emails are just reminders—your studying happens here. Click the phone to step through.</p>
+
+      <div class="steps mt-6">
+        <div class="step">
+          <div class="badge">1</div>
+          <div>
+            <h4>Upload Your Syllabus/Notes/Tests</h4>
+            <p>Drag & drop PDFs/notes or add topics manually.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="badge">2</div>
+          <div>
+            <h4>AI Creates Your Study Plan</h4>
+            <p>Get a daily sequence you can tweak before scheduling.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="badge">3</div>
+          <div>
+            <h4>Track with Your Dashboard</h4>
+            <p>All classes, schedules, and progress in one view.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="badge">4</div>
+          <div>
+            <h4>Study on Memoraid</h4>
+            <p>Summaries, examples, quizzes—on-site. Reminders bring you back.</p>
+          </div>
+        </div>
+
+        <div style="margin-top:14px">
+          <a href="/register" class="inline-flex items-center justify-center rounded-lg px-5 py-3 text-white font-semibold" style="background:#6366F1;box-shadow:0 8px 20px rgba(99,102,241,.25)">Start Free — Build Your First Class</a>
+          <div style="font-size:12px;color:#64748b;margin-top:6px">No credit card required.</div>
+        </div>
+      </div>
     </div>
+
+    <!-- Right: Phone Stories (no-crop) -->
+    <div style="display:flex;justify-content:center">
+      <div class="phone-shell" id="memoraid-phone">
+        <div class="island"></div>
+        <div class="bezel">
+          <div class="screen">
+            <div class="progress" id="story-progress">
+              <div class="bar"><span></span></div>
+              <div class="bar"><span></span></div>
+              <div class="bar"><span></span></div>
+              <div class="bar"><span></span></div>
+            </div>
+            <div class="chrome-dots"><i class="dot-r"></i><i class="dot-y"></i><i class="dot-g"></i></div>
+
+            <div class="media">
+              <div class="canvas">
+                <img id="story-img-a" class="story-img active" src="https://i.ibb.co/VcdC5xQs/127-0-0-1-5000-build-school-newsletter-1.png" alt="Memoraid preview A">
+                <img id="story-img-b" class="story-img" src="" alt="Memoraid preview B">
+              </div>
+              <button class="nav-btn nav-prev" aria-label="Previous"></button>
+              <button class="nav-btn nav-next" aria-label="Next"></button>
+              <div class="ghost" id="pause-zone" aria-hidden="true"></div>
+            </div>
+
+
+          </div>
+        </div>
+
+        <!-- 👇 New logo block goes here -->
+        <div class="phone-logo">
+          <img src="https://i.ibb.co/WNnBgnbj/logo.png" alt="Memoraid Logo">
+        </div>
+        <!-- end logo -->
+
+      </div>
+    </div>    
   </div>
+
+    </div>    
+  </div>
+
+
+  <script>
+    (function(){
+      const slides = [
+        { src: "https://i.ibb.co/VcdC5xQs/127-0-0-1-5000-build-school-newsletter-1.png" },
+        { src: "https://i.ibb.co/hJFYzYPF/Screenshot-2025-08-31-at-3-43-47-PM.png" },
+        { src: "https://i.ibb.co/nMxFQBwD/Screenshot-2025-08-31-at-3-44-08-PM.png" },
+        { src: "https://i.ibb.co/zHNvDYLd/Screenshot-2025-08-31-at-3-42-33-PM.png" }
+      ];
+
+      const DURATION = 4500;   // ms per slide
+      let i = 0, t, start, paused = false, useA = true;
+
+      const imgA = document.getElementById('story-img-a');
+      const imgB = document.getElementById('story-img-b');
+      const bars = Array.from(document.querySelectorAll('#story-progress .bar > span'));
+      const prevBtn = document.querySelector('.nav-prev');
+      const nextBtn = document.querySelector('.nav-next');
+      const pauseZone = document.getElementById('pause-zone');
+
+      function setActive(src){
+        const show = useA ? imgB : imgA;   // next buffer to show
+        const hide = useA ? imgA : imgB;   // current visible to hide
+        show.src = src;
+        // force reflow so the transition always fires
+        // eslint-disable-next-line no-unused-expressions
+        show.offsetHeight;
+        hide.classList.remove('active');
+        show.classList.add('active');
+        useA = !useA;
+      }
+
+      function render(k){
+        setActive(slides[k].src);
+        bars.forEach((b, idx) => { b.style.width = idx < k ? '100%' : '0%'; });
+      }
+
+      function tick(ts){
+        if (paused) { start = ts - (start||ts); t = requestAnimationFrame(tick); return; }
+        if (!start) start = ts;
+        const p = Math.min(1, (ts - start)/DURATION);
+        bars[i].style.width = (p*100)+'%';
+        if (p >= 1) { next(); return; }
+        t = requestAnimationFrame(tick);
+      }
+
+      function play(){ cancelAnimationFrame(t); start = null; t = requestAnimationFrame(tick); }
+      function next(){
+        bars[i].style.width = '100%';
+        i = (i + 1) % slides.length;
+        render(i);
+        play();
+      }
+      function prev(){
+        bars[i].style.width = '0%';
+        i = (i - 1 + slides.length) % slides.length;
+        render(i);
+        play();
+      }
+
+      nextBtn.addEventListener('click', next);
+      prevBtn.addEventListener('click', prev);
+      pauseZone.addEventListener('mouseenter', () => paused = true);
+      pauseZone.addEventListener('mouseleave', () => paused = false);
+      document.getElementById('memoraid-phone').addEventListener('pointerdown', () => paused = true);
+      document.getElementById('memoraid-phone').addEventListener('pointerup', () => paused = false);
+      document.addEventListener('keydown', (e)=>{ if(e.key==='ArrowRight') next(); if(e.key==='ArrowLeft') prev(); });
+
+      // init
+      imgA.src = slides[0].src;
+      imgA.classList.add('active');
+      bars.forEach(b => b.style.width = '0%');
+      play();
+    })();
+  </script>
+
+
 </section>
+
+
+
 
 
 
@@ -414,7 +739,7 @@
         Ready to Automate Your Study Plan?
     </h2>
     <p class="text-lg sm:text-xl text-gray-300 mb-10">
-        Start for free. Upload your syllabus and get your first AI-curated email within minutes.
+        Start for free. Upload your notes/syllabus/tests and get your first study plan in minutes.
     </p>
     <a href="/register" class="inline-block bg-white text-black text-lg font-semibold px-8 py-4 rounded-full shadow-md hover:shadow-lg transition">
         Create Your First Class Free →

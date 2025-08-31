@@ -39,6 +39,46 @@
       </select>
     </div>
 
+    <div>
+      <label class="block text-sm font-semibold text-[var(--color-text)] mb-1">Send time (local)</label>
+      <input
+        type="time"
+        name="local_send_time"
+        id="local_send_time"
+        step="60"
+        class="w-full rounded-xl border border-[var(--color-border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+      >
+      <input type="hidden" name="tz_offset_minutes" id="tz_offset_minutes">
+      <input type="hidden" id="next_send_time_utc" value="{{ next_send_time_utc or '' }}">
+      <p class="mt-1 text-xs text-[var(--color-muted)]">Only the time-of-day changes; dates remain the same. Times are stored in UTC.</p>
+    </div>
+
+    <script>
+      (function () {
+        // Capture browser timezone offset (minutes to add to local to reach UTC)
+        var tzInput = document.getElementById('tz_offset_minutes');
+        if (tzInput) {
+          tzInput.value = String(new Date().getTimezoneOffset());
+        }
+
+        // Pre-fill the time picker using the current next_send_time (UTC → local)
+        var utcVal = document.getElementById('next_send_time_utc')?.value;
+        var timeInput = document.getElementById('local_send_time');
+        if (utcVal && timeInput) {
+          // Parse as UTC; construct Date in JS; then extract local HH:MM
+          // Ensure it ends with 'Z' if not present to avoid local parsing ambiguity
+          var iso = utcVal.endsWith('Z') ? utcVal : (utcVal + 'Z');
+          var d = new Date(iso);
+          if (!isNaN(d.getTime())) {
+            var hh = String(d.getHours()).padStart(2, '0');
+            var mm = String(d.getMinutes()).padStart(2, '0');
+            timeInput.value = hh + ':' + mm;
+          }
+        }
+      })();
+    </script>
+
+
     {% if plan_type == 'school' %}
       <div>
         <label class="block text-sm font-semibold text-[var(--color-text)] mb-2">Content Types</label>

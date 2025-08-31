@@ -194,37 +194,43 @@ def check_and_send():
                             )
 
                         elif plan_type == "school":
-                            from newsletter_writer_school import write_study_email, generate_subject_line  # ✅ New helper
+                            from newsletter_writer_school import write_study_email, generate_subject_line
 
-                            # Convert stored JSON string of topics into Python list
                             try:
                                 topics_list = json.loads(plan.topics) if plan.topics else []
                             except Exception:
                                 topics_list = []
 
-                            # Get today's topic from the Email row
                             current_topic = email.topic or (
                                 topics_list[email.position_in_plan - 1] if 0 <= (email.position_in_plan - 1) < len(topics_list) else "Untitled Topic"
                             )
 
-                            # Generate a subject line for the email
+                            # Generate content exactly like before
                             subject_line = generate_subject_line(current_topic, plan.course_name)
 
                             html = write_study_email(
                                 course_name=plan.course_name,
-                                topics=plan.topics,  # full course topic list
-                                section_title=current_topic,  # ✅ Using topic instead of title
+                                topics=plan.topics,
+                                section_title=current_topic,
                                 content_types=json.loads(plan.content_types),
                                 plan_title=plan.course_name,
                                 position_in_plan=email.position_in_plan,
                                 past_content=None
                             )
 
-                            # Send the email
-                            send_email(user.email, subject_line, html)
+                            # ✅ No email send — publish to dashboard only
+                            # Keep the subject for reference
+                            # ✅ Send lightweight notification via Brevo
+                            try:
+                                subject_line = f"[{plan.course_name}] {current_topic} — Lesson #{email.position_in_plan}"
+                                send_email(user.email, subject_line, "")
+                                print(f"📧 Notification sent to {user.email} for lesson {email.position_in_plan}")
+                            except Exception as e:
+                                print(f"⚠️ Failed to send Brevo notification: {e}")
 
-                            # Store generated subject line in DB for record
+                            # Store subject for dashboard/history
                             email.title = subject_line
+
 
                     except Exception as e:
                         print(f"❌ GPT generation failed for email {getattr(email, 'email_id', None)}: {e}")

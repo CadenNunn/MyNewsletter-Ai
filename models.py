@@ -15,6 +15,8 @@ class Email(Base):
     html_content = Column(Text)  # Full generated HTML body
     sent = Column(Boolean, default=False)
     send_date = Column(DateTime)
+    status = Column(String(20), default='unmarked', index=True)  # 'unmarked' | 'incomplete' | 'needs_review' | 'complete'
+
 
 class PastNewsletter(Base):
     __tablename__ = 'past_newsletters'

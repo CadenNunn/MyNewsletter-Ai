@@ -670,6 +670,10 @@ def build_school_newsletter():
         session.pop('syllabus_extracted_topics', None)
         print("Session reset triggered. Cleared syllabus data.")
 
+    # Clear any stale flash messages when (re)opening the builder
+    session.pop('_flashes', None)
+
+
     user_id = session['user_id']
     db = SessionLocal()
     try:
@@ -751,6 +755,9 @@ def generate_school_newsletter():
     except Exception as e:
         print("❌ PREVIEW debug print failed:", e)
 
+    # Clear any stale flash messages from prior attempts
+    session.pop('_flashes', None)
+
     return render_template(
         'school_preview.html',
         plan=session['school_newsletter'],
@@ -758,6 +765,7 @@ def generate_school_newsletter():
         topics_len=topics_len,
         slider_max=slider_max
     )
+
 
 
 
@@ -1083,6 +1091,25 @@ def dashboard():
             .all()
         )
 
+        # 🔔 Find latest UNMARKED lesson per plan (sent==True, status=='unmarked')
+        latest_unmarked_by_plan = {}
+        unmarked = (
+            db.query(Email)
+            .filter(
+                Email.user_id == user_id,
+                Email.sent == True,
+                Email.status == 'unmarked'
+            )
+            .order_by(Email.send_date.desc().nullslast())
+            .all()
+        )
+        for e in unmarked:
+            if e.plan_id not in latest_unmarked_by_plan:
+                latest_unmarked_by_plan[e.plan_id] = {
+                    "email_id": e.email_id,
+                    "title": (e.topic or e.title or "New lesson")
+                }
+
         # 🧠 Progress is now: SENT vs MAX (not total rows in emails table)
         # 1) Sent count per plan_id
         sent_rows = (
@@ -1134,11 +1161,15 @@ def dashboard():
                 "tone": n.tone,
                 "frequency": n.frequency,
                 "next_send_time": n.next_send_time,
-                "type": "general"
+                "type": "general",
+                "has_unmarked": False,
+                "latest_unmarked_email_id": None,
+                "latest_unmarked_title": None
             }
 
         import json
         def format_school(n):
+            mu = latest_unmarked_by_plan.get(n.id)
             return {
                 "id": n.id,
                 "plan_title": n.course_name,
@@ -1148,7 +1179,10 @@ def dashboard():
                 "frequency": n.frequency,
                 "next_send_time": n.next_send_time,
                 "type": "school",
-                "content_types": json.loads(n.content_types) if n.content_types else []
+                "content_types": json.loads(n.content_types) if n.content_types else [],
+                "has_unmarked": bool(mu),
+                "latest_unmarked_email_id": mu["email_id"] if mu else None,
+                "latest_unmarked_title": mu["title"] if mu else None
             }
 
         newsletters_active = [format_general(n) for n in general_newsletters] + [format_school(n) for n in school_newsletters]
@@ -1197,11 +1231,61 @@ def edit_newsletter():
         flash("Invalid edit request.")
         return redirect(url_for('dashboard'))
 
+    from datetime import datetime, timedelta, time as dtime
     db = SessionLocal()
     try:
         # Fixed option sets we support in UI
         freq_options = ["daily", "biweekly", "weekly"]
         content_type_options = ["summary", "example", "quiz", "flashcards"]
+
+        def apply_time_change_to_emails(db_session, plan_id_int, local_time_str, tz_offset_minutes_str):
+            """
+            Update the time-of-day for:
+              - plan.next_send_time
+              - all UNSENT Email rows for this plan (keep the same local DATE, replace time)
+            Storage remains UTC.
+            """
+            if not local_time_str or tz_offset_minutes_str is None:
+                return
+
+            # Parse inputs
+            try:
+                hh, mm = [int(x) for x in local_time_str.split(":")[:2]]
+                local_new_time = dtime(hour=hh, minute=mm)
+            except Exception:
+                return  # Invalid time; silently skip (UI validation should prevent)
+
+            try:
+                tz_off = int(tz_offset_minutes_str)  # JS getTimezoneOffset(), e.g. 300 for CDT
+            except Exception:
+                return
+
+            # Update plan.next_send_time, preserving the same (UTC) date but changing local time-of-day.
+            # Strategy: convert plan.next_send_time (UTC) → local date, replace time, convert back to UTC.
+            plan_row = db_session.query(SchoolNewsletter).filter(SchoolNewsletter.id == plan_id_int).first() \
+                or db_session.query(Newsletter).filter(Newsletter.id == plan_id_int).first()
+
+            if plan_row and plan_row.next_send_time:
+                # UTC → local
+                local_date_for_plan = (plan_row.next_send_time - timedelta(minutes=tz_off)).date()
+                # local date with new local time
+                new_local_dt = datetime.combine(local_date_for_plan, local_new_time)
+                # back to UTC
+                new_next_send_utc = new_local_dt + timedelta(minutes=tz_off)
+                plan_row.next_send_time = new_next_send_utc
+
+            # Update unsent Email rows for this plan_id (keep same local DATE, change local time)
+            unsent = db_session.query(Email).filter(
+                Email.plan_id == plan_id_int,
+                Email.sent == False
+            ).all()
+            for e in unsent:
+                if not e.send_date:
+                    continue
+                # Convert existing UTC send_date to LOCAL, grab its date, set new local time, convert back to UTC
+                cur_local_date = (e.send_date - timedelta(minutes=tz_off)).date()
+                new_local_dt = datetime.combine(cur_local_date, local_new_time)
+                e.send_date = new_local_dt + timedelta(minutes=tz_off)
 
         if plan_type == 'general':
             plan = db.query(Newsletter).filter(Newsletter.id == plan_id, Newsletter.user_id == user_id).first()
@@ -1214,6 +1298,12 @@ def edit_newsletter():
                 freq = request.form.get('frequency')
                 if freq in freq_options:
                     plan.frequency = freq
+
+                # OPTIONAL time-of-day update (local → UTC)
+                local_send_time = request.form.get('local_send_time')  # "HH:MM"
+                tz_offset_minutes = request.form.get('tz_offset_minutes')  # JS getTimezoneOffset()
+                apply_time_change_to_emails(db, int(plan_id), local_send_time, tz_offset_minutes)
+
                 db.commit()
                 flash("Newsletter updated.")
                 return redirect(url_for('dashboard'))
@@ -1227,7 +1317,8 @@ def edit_newsletter():
                 frequency=plan.frequency or '',
                 freq_options=freq_options,
                 content_type_options=[],          # not used for general
-                selected_content_types=[]         # not used for general
+                selected_content_types=[],         # not used for general
+                next_send_time_utc=(plan.next_send_time.isoformat() if plan.next_send_time else '')
             )
 
         else:
@@ -1247,6 +1338,12 @@ def edit_newsletter():
                 selected = request.form.getlist('content_types')
                 selected = [c for c in selected if c in content_type_options]
                 plan.content_types = json.dumps(selected)
+
+                # OPTIONAL time-of-day update (local → UTC)
+                local_send_time = request.form.get('local_send_time')  # "HH:MM"
+                tz_offset_minutes = request.form.get('tz_offset_minutes')  # JS getTimezoneOffset()
+                apply_time_change_to_emails(db, int(plan_id), local_send_time, tz_offset_minutes)
+
                 db.commit()
                 flash("Study plan updated.")
                 return redirect(url_for('dashboard'))
@@ -1267,8 +1364,256 @@ def edit_newsletter():
                 frequency=plan.frequency or '',
                 freq_options=freq_options,
                 content_type_options=content_type_options,
-                selected_content_types=selected_ct
+                selected_content_types=selected_ct,
+                next_send_time_utc=(plan.next_send_time.isoformat() if plan.next_send_time else '')
             )
+    finally:
+        db.close()
+
+# ---------------- Lessons on Dashboard----------------
+from flask import render_template, request, abort, redirect, url_for, flash, session
+from models import Email
+from db import SessionLocal
+
+@app.route('/dashboard/lessons')
+def list_lessons():
+    if 'user_id' not in session:
+        flash("Please log in to view your lessons.")
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    plan_id = request.args.get('plan_id', type=int)
+    status_filter = (request.args.get('status') or '').strip().lower()  # '', 'incomplete', 'needs_review', 'complete', 'unmarked'
+
+    db = SessionLocal()
+    try:
+        q = db.query(Email).filter(Email.user_id == user_id, Email.sent == True)
+        if plan_id:
+            q = q.filter(Email.plan_id == plan_id)
+        if status_filter in ('unmarked', 'incomplete', 'needs_review', 'complete'):
+            q = q.filter(Email.status == status_filter)
+
+        lessons = q.order_by(Email.send_date.desc().nullslast(), Email.position_in_plan.asc()).all()
+        return render_template('lessons_list.html', lessons=lessons, plan_id=plan_id, status_filter=status_filter)
+    finally:
+        db.close()
+@app.post("/lesson/<int:email_id>/status")
+def update_lesson_status(email_id):
+    """
+    Update per-lesson status: 'unmarked' | 'incomplete' | 'needs_review' | 'complete'
+    """
+    if 'user_id' not in session:
+        flash("Please log in.")
+        return redirect(url_for('login'))
+
+    new_status = (request.form.get('status') or '').strip().lower()
+    next_url = request.args.get('next') or request.form.get('next')
+
+    if new_status not in ('unmarked', 'incomplete', 'needs_review', 'complete'):
+        flash("Invalid status.")
+        return redirect(next_url or url_for('view_lesson', email_id=email_id))
+
+    db = SessionLocal()
+    try:
+        lesson = db.query(Email).filter(Email.email_id == email_id).first()
+        if (not lesson) or (lesson.user_id != session['user_id']) or (not lesson.sent):
+            abort(404)
+
+        lesson.status = new_status
+        db.commit()
+        flash(f"Status updated to {new_status.replace('_',' ')}.")
+
+        # If a next URL was provided, go there; otherwise fall back to the lesson page
+        return redirect(next_url or url_for('view_lesson', email_id=email_id))
+    finally:
+        db.close()
+
+@app.route('/lesson/<int:email_id>')
+def view_lesson(email_id):
+    if 'user_id' not in session:
+        flash("Please log in to view your lesson.")
+        return redirect(url_for('login'))
+
+    db = SessionLocal()
+    try:
+        lesson = db.query(Email).filter(Email.email_id == email_id).first()
+        if (not lesson) or (lesson.user_id != session['user_id']) or (not lesson.sent):
+            abort(404)
+        return render_template('lesson.html', lesson=lesson)
+    finally:
+        db.close()
+
+# ---------- Lesson utilities (complete + flashcards export) ----------
+from flask import redirect, url_for, flash, session, abort, Response
+from db import SessionLocal
+from models import Email
+
+@app.post("/lesson/<int:email_id>/complete")
+def mark_lesson_complete(email_id):
+    """
+    Minimal stub: just flash + redirect.
+    Later you can persist completion in a table if you want real tracking.
+    """
+    if 'user_id' not in session:
+        flash("Please log in.")
+        return redirect(url_for('login'))
+
+    db = SessionLocal()
+    try:
+        lesson = db.query(Email).filter(Email.email_id == email_id).first()
+        if (not lesson) or (lesson.user_id != session['user_id']) or (not lesson.sent):
+            abort(404)
+        flash("Marked complete.")
+        return redirect(url_for('view_lesson', email_id=email_id))
+    finally:
+        db.close()
+
+@app.get("/lesson/<int:email_id>/flashcards.apkg")
+def download_flashcards_apkg(email_id):
+    """
+    Build an Anki .apkg from the Flashcards section of lesson.html_content.
+    Expects a <h2>Flashcards</h2> followed by a <ul><li>Front — Back</li>...</ul>.
+    """
+    from flask import send_file
+    if 'user_id' not in session:
+        flash("Please log in.")
+        return redirect(url_for('login'))
+
+    db = SessionLocal()
+    try:
+        lesson = db.query(Email).filter(Email.email_id == email_id).first()
+        if (not lesson) or (lesson.user_id != session['user_id']) or (not lesson.sent):
+            abort(404)
+
+        html = (lesson.html_content or "")
+        if not html:
+            abort(404)
+
+        # --- Parse flashcards from HTML ---
+        import re, html as h
+        m = re.search(r'<h2[^>]*>\s*Flashcards\s*</h2>\s*<ul[^>]*>(.*?)</ul>', html, flags=re.I|re.S)
+        if not m:
+            abort(404)
+
+        ul_html = m.group(1)
+        items = re.findall(r'<li[^>]*>(.*?)</li>', ul_html, flags=re.I|re.S)
+
+        pairs = []
+        for li in items:
+            text = re.sub(r'<[^>]*>', '', li)  # strip tags
+            text = h.unescape(text).strip()
+            parts = re.split(r'\s+[—-]\s+|\s*[:|]\s*', text, maxsplit=1)
+            if len(parts) == 2:
+                front, back = parts[0].strip(), parts[1].strip()
+                if front and back:
+                    pairs.append((front, back))
+
+        if not pairs:
+            abort(404)
+
+        # --- Build .apkg with genanki ---
+        import io, hashlib
+        try:
+            import genanki
+        except ImportError:
+            flash("Anki export not available on server (missing 'genanki').")
+            return redirect(url_for('view_lesson', email_id=email_id))
+
+        # Stable deck ID based on email_id
+        deck_id = int(hashlib.md5(f"memoraid-deck-{email_id}".encode()).hexdigest()[:8], 16)
+        model_id = int(hashlib.md5(f"memoraid-model-{email_id}".encode()).hexdigest()[:8], 16)
+
+        model = genanki.Model(
+            model_id,
+            'Memoraid Basic (Front/Back)',
+            fields=[
+                {'name': 'Front'},
+                {'name': 'Back'},
+            ],
+            templates=[{
+                'name': 'Card 1',
+                'qfmt': '{{Front}}',
+                'afmt': '{{Front}}<hr id="answer">{{Back}}',
+            }],
+            css="""
+                .card { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; font-size: 20px; color: #111827; background: #ffffff; }
+                hr#answer { margin: 1.2em 0; border: none; border-top: 1px solid #e5e7eb; }
+            """,
+        )
+
+        deck_title = lesson.topic or (lesson.title or f'Lesson {email_id}')
+        deck = genanki.Deck(deck_id, f"Memoraid • {deck_title}")
+
+        for front, back in pairs:
+            # Stable GUID per card
+            guid = hashlib.md5(f"{deck_id}|{front}|{back}".encode()).hexdigest()
+            note = genanki.Note(model=model, fields=[front, back], guid=guid)
+            deck.add_note(note)
+
+        pkg = genanki.Package(deck)
+        buf = io.BytesIO()
+        pkg.write_to_file(buf)
+        buf.seek(0)
+
+        filename = f"flashcards_{email_id}.apkg"
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/octet-stream"
+        )
+    finally:
+        db.close()
+
+
+@app.get("/lesson/<int:email_id>/flashcards.txt")
+def download_flashcards(email_id):
+    """
+    No schema changes: parse flashcards out of the existing HTML.
+    Looks for the <h2>Flashcards</h2> block followed by a <ul><li>Front — Back</li>...</ul>.
+    """
+    if 'user_id' not in session:
+        flash("Please log in.")
+        return redirect(url_for('login'))
+
+    db = SessionLocal()
+    try:
+        lesson = db.query(Email).filter(Email.email_id == email_id).first()
+        if (not lesson) or (lesson.user_id != session['user_id']) or (not lesson.sent):
+            abort(404)
+
+        html = (lesson.html_content or "")
+        if not html:
+            abort(404)
+
+        # Very lightweight parse: pull the Flashcards <ul> and extract "Front — Back"
+        import re, html as h
+        # Find the <h2>Flashcards</h2> ... <ul> ... </ul>
+        m = re.search(r'<h2[^>]*>\s*Flashcards\s*</h2>\s*<ul[^>]*>(.*?)</ul>', html, flags=re.I|re.S)
+        if not m:
+            abort(404)
+
+        ul_html = m.group(1)
+        items = re.findall(r'<li[^>]*>(.*?)</li>', ul_html, flags=re.I|re.S)
+        lines = []
+        for li in items:
+            text = re.sub(r'<[^>]*>', '', li)              # strip tags
+            text = h.unescape(text).strip()
+            # split on em dash or hyphen or colon or pipe
+            parts = re.split(r'\s+[—-]\s+|\s*[:|]\s*', text, maxsplit=1)
+            if len(parts) == 2:
+                front, back = parts[0].strip(), parts[1].strip()
+                lines.append(f"{front} ; {back}")
+
+        if not lines:
+            abort(404)
+
+        payload = "\n".join(lines)
+        return Response(
+            payload,
+            mimetype="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="flashcards_{email_id}.txt"'}
+        )
     finally:
         db.close()
 
