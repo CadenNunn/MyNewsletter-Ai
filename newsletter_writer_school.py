@@ -22,6 +22,26 @@ Return only the subject line text with no quotes, punctuation at the end, or ext
     )
     return response.choices[0].message.content.strip()
 
+# --- NEW: tiny subject inferrer (zero deps) ---
+def _infer_subject(course_name: str, section_title: str, topics) -> str:
+    text = f"{course_name} {section_title} {' '.join(topics) if isinstance(topics, (list, tuple)) else topics}".lower()
+    keys = {
+        "math": ["calculus","algebra","geometry","trig","statistics","probability","matrix","derivative","integral","limit","equation","function"],
+        "language": ["spanish","french","german","italian","conjugation","vocabulary","vocab","grammar","listening","speaking","reading","pronunciation","preterite","subjunctive"],
+        "bio": ["biology","biochem","enzyme","cell","genetics","physiology","anatomy","pathway","protein"],
+        "chem": ["chemistry","stoichiometry","equilibrium","acid","base","redox","organic","enthalpy","bonding","orbitals"],
+        "physics": ["kinematics","forces","electric","magnetic","optics","thermo","quantum"],
+        "cs": ["algorithm","data structure","python","java","recursion","complexity"],
+        "history": ["revolution","empire","treaty","primary source","chronology","industrial","medieval","renaissance"],
+    }
+    best, score = "generic", 0
+    for k, kw in keys.items():
+        s = sum(kwd in text for kwd in kw)
+        if s > score:
+            best, score = k, s
+    return best
+
+
 
 def write_study_email(
     course_name,
@@ -48,29 +68,75 @@ Avoid repeating any ideas, questions, or examples already written for this cours
 === END PAST CONTENT ===
 """ if past_content else ""
 
-    # --- Section descriptions tuned for variety ---
-    section_descriptions = {
-        "summary": (
-            "- Write a deep explanation of the subtopic’s **mechanism and logic** (e.g., steps, regulators, driving forces). "
-            "Do not just define; unpack *how and why* it works. Include at least one non-obvious insight or exception."
-        ),
-        "example": (
-            "- Give a **realistic applied scenario** where the subtopic plays out (e.g., mutation, experimental condition, clinical case). "
-            "Explain the reasoning chain to the outcome. Must feel different from summary — no rephrasing."
-        ),
-        "quiz": (
-            "- Write 5 challenging multiple-choice questions that test **application and reasoning** (not recall). "
-            "Each question must declare the correct option in a data attribute as defined below. Do NOT add a separate 'Answers' paragraph."
-        ),
-        "flashcards": (
-            "- Write 6–8 flashcards targeting **different dimensions** of the subtopic: one on mechanism, one on regulators, "
-            "one on experimental detection, one on pathological consequence, etc. Avoid duplicating quiz or summary."
-        ),
-        "suggested reading": (
-            "- Suggest 2–3 advanced, realistic study resources (textbook sections, lecture names, or well-known video series). "
-            "Each resource must complement gaps left by the sections above."
-        ),
-    }
+    # --- Subject-aware section descriptions (minimal logic, big payoff) ---
+    subject = _infer_subject(course_name, section_title, topics)
+
+    if subject == "math":
+        section_descriptions = {
+            "summary": (
+                "- Explain the key ideas for ONE specific concept in plain text (no LaTeX). "
+                "List core formulas (as plaintext), constraints (domain/assumptions), and the most common mistake on exams."
+            ),
+            "example": (
+                "- Provide ONE fully worked problem (step-by-step). "
+                "Each step on a new line with a short justification. Keep numbers realistic."
+            ),
+            "quiz": (
+                "- Write 5 exam-style problems mixing conceptual and quick-calculation items. "
+                "Each stem must be a concrete problem; distractors should be plausible. "
+                "Mark the correct letter via the data-attribute (see format). No answer paragraph."
+            ),
+            "flashcards": (
+                "- Write 8 formula/definition flashcards as Term::Definition lines. "
+                "Prefer canonical forms and short definitions."
+            ),
+            "suggested reading": (
+                "- Suggest 2–3 practice sources (chapters/sections or problem sets) that target the exact weaknesses implied by the quiz."
+            ),
+        }
+    elif subject == "language":
+        section_descriptions = {
+            "summary": (
+                "- Explain ONE grammar/usage point in 5 bullets: when to use it, key pattern, 2 high-frequency examples, and a common mistake."
+            ),
+            "example": (
+                "- Create ONE 4–6 line mini-dialogue showcasing the pattern. "
+                "Each line immediately followed by a translation."
+            ),
+            "quiz": (
+                "- Write 5 MCQs biased toward cloze (fill-the-blank) with conjugation/word-choice/meaning. "
+                "Keep options short, high-frequency, and only one clearly correct by context. "
+                "Mark the correct letter via data-attribute. No answer paragraph."
+            ),
+            "flashcards": (
+                "- Write 10 flashcards as Word/Phrase::Meaning | Example (very short, high-frequency)."
+            ),
+            "suggested reading": (
+                "- Suggest 2–3 resources (chapter/lesson/video) that emphasize listening + production for this pattern."
+            ),
+        }
+    else:
+        # generic / science / everything else — your prior behavior, but cleaner
+        section_descriptions = {
+            "summary": (
+                "- Explain the subtopic’s mechanism and logic (steps, drivers, exceptions). "
+                "Go beyond definition with at least one non-obvious insight."
+            ),
+            "example": (
+                "- Provide ONE realistic applied scenario and explain the reasoning chain to the outcome. "
+                "Must feel different from the summary."
+            ),
+            "quiz": (
+                "- Write 5 application-heavy MCQs. "
+                "Each question must declare the correct letter via data-attribute. No separate answers block."
+            ),
+            "flashcards": (
+                "- Write 6–8 flashcards covering distinct angles (definition, regulator, detection, pitfall)."
+            ),
+            "suggested reading": (
+                "- Suggest 2–3 targeted resources that complement the above content."
+            ),
+        }
 
     requested_blocks = "\n".join([
         section_descriptions[ct.lower()]
@@ -205,21 +271,49 @@ Avoid repeating any ideas, questions, or examples already written for this cours
             "</ul>"
         )
 
+    # Subject-specific rule text for higher exam relevance
+    if subject == "math":
+        subject_rules = (
+            "Rule 3 — Exam-match contract: Prefer concrete, solvable problems with realistic numbers. "
+            "Show reasoning clearly. Prioritize functions, graphs, limits/derivatives/integrals, algebraic manipulation, and common traps."
+        )
+        quiz_rules = (
+            "For math, stems must be actual problems (compute/decide). "
+            "At least 3 items require calculation or symbolic manipulation. Distractors must be plausible (common algebra/calculus errors)."
+        )
+    elif subject == "language":
+        subject_rules = (
+            "Rule 3 — Exam-match contract: Prefer production/recognition tasks. "
+            "Focus on cloze with correct forms, meaning-by-context, and short translations. Use high-frequency vocabulary."
+        )
+        quiz_rules = (
+            "For language, prefer cloze with one clearly correct form/word by context; keep options short and natural. "
+            "Include at least 1 conjugation item and 1 meaning/usage judgment."
+        )
+    else:
+        subject_rules = (
+            "Rule 3 — Exam-match contract: Emphasize application, edge cases, and interpretation. "
+            "Anchor in mechanisms, cases, trade-offs, and pitfalls relevant to typical exams in this subject."
+        )
+        quiz_rules = (
+            "Ensure stems test application/interpretation rather than recall. Distractors should reflect common misconceptions."
+        )
+
     prompt = f"""
 You are an expert study strategist creating a study email for a course titled "{plan_title}".
 This is email {position_in_plan}. Today's declared focus is: "{section_title}"
 The broader course/topics context is: "{topics}"
+Detected subject type: {subject}
 
-Task: produce exam-grade reinforcement at **upper-division level**.
+Task: produce exam-grade reinforcement aligned to what students actually see on tests.
 
-Rule 1 — Narrow focus: Choose ONE specific high-yield subtopic (e.g., folding pathway step, chaperone role, disease misfolding mechanism). Use it consistently throughout.
-Rule 2 — Non-redundancy: Each section must cover a **different dimension** of the subtopic (mechanism vs application vs pitfalls vs practice).
-Rule 3 — Upper-division contract: Avoid elementary filler. Anchor content in enzymes, pathways, regulators, kinetics, energetics, experimental methods, or pathological relevance.
+Rule 1 — Narrow focus: Choose ONE specific high-yield subtopic appropriate to {subject} and use it consistently.
+Rule 2 — Non-redundancy: Each section must cover a **different dimension** (concept/mechanism vs application vs pitfalls vs practice).
+{subject_rules}
 
+{past_note}
 
-
-
-Then, based on the student's selected content preferences, include ONLY the following sections:
+Include ONLY the following sections based on the student's selected preferences:
 {requested_blocks if requested_blocks.strip() else "- If no sections selected, include Summary + Flashcards."}
 
 QUIZ FORMAT (MANDATORY — DO NOT DEVIATE):
@@ -240,6 +334,7 @@ Rules:
 - NO <br> between choices.
 - Exactly one correct letter in data-answer per question.
 - Do NOT add an "Answers:" paragraph anywhere.
+- {quiz_rules}
 
 Conclude with 2–3 sentences that recap the unique subtopic insights and tease what's next:
 - Next Up: {next_teaser}
@@ -256,9 +351,10 @@ STRUCTURE (use HTML tags exactly):
 
 Global requirements:
 - Each section must present **new information** (no overlaps, no paraphrasing).
-- Write at advanced college level (biochemistry/upper-division).
+- Write at an advanced college level appropriate to {subject}.
 - Return valid HTML using <h1>, <h2>, <p>, <ul>, <ol>, <li>, and inline <strong>. No tables or inline styles.
 """
+
 
     response = client.chat.completions.create(
         model="gpt-4",
